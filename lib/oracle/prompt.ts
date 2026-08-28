@@ -1,0 +1,137 @@
+// lib/oracle/prompt.ts
+//
+// The Pane's voice, assembled per turn.
+//
+// ===========================================================================
+// OPEN QUESTION 6 — integrity degradation and prompt assembly, resolved.
+//
+// The system prompt is an ORDERED LIST OF BLOCKS, not a template literal, and the
+// ordering rule is VOLATILITY: byte-stable blocks first, per-turn blocks last, with one
+// cache breakpoint between them.
+//
+//   [ identity ][ voice base ][ rules ][ tool policy ]  ← constant for the whole run
+//   ------------------------- cache breakpoint --------------------------
+//   [ voice tier ][ intent ][ world state ][ journal ] ← changes every turn
+//
+// This is the load-bearing reason for the block model rather than the starter's single
+// interpolated string. ARCHITECTURE §8.4 wants Anthropic prompt caching, and caching
+// requires a byte-identical PREFIX. In the starter, `cracked` is interpolated in the
+// middle of the voice section, so crossing 30% integrity changes the prefix and throws
+// away the cache — and, worse, the cache is cold again on the second tool-continuation
+// step of the same turn. Appending tier directives after the breakpoint instead of
+// interpolating them keeps the prefix stable for the entire session, across every tier
+// and every step.
+//
+// The tiers themselves are DATA, in VOICE_TIERS, selected by a pure function of
+// integrity. Nothing else in the codebase branches on integrity: the crack overlay
+// reads `1 - integrity/100` directly, and the prefetch digest reads `tierOf(integrity)`
+// so that a buffered response is invalidated exactly when the voice would have changed.
+// One number, three consumers, no synchronisation.
+// ===========================================================================
+
+import type { ContextPacket } from '../sim/types';
+import type { PaneJournal } from './journal';
+import type { TurnKind } from './protocol';
+
+export interface PromptBlock {
+  id: string;
+  text: string;
+  /** Part of the byte-stable prefix. Must not contain per-turn data. Enforced by review. */
+  stable: boolean;
+}
+
+export type VoiceTierId = 'intact' | 'hairline' | 'fractured' | 'shattered';
+
+export interface VoiceTier {
+  id: VoiceTierId;
+  /** Inclusive lower bound of integrity, 0-100. Tiers are contiguous and total. */
+  minIntegrity: number;
+  /** Appended after the cache breakpoint. Empty for `intact` — the base voice IS intact. */
+  directives: readonly string[];
+}
+
+/**
+ * PRD §4.1: "Below 30% the Pane's narration visibly degrades — shorter sentences,
+ * dropped words, glitched glyphs. This is a prompt-level change, not a graphics effect."
+ *
+ * Four tiers rather than the doc's two, because `hairline` gives the player a warning
+ * that something is happening to the glass before it becomes hard to read, and
+ * `shattered` gives the endgame somewhere to go. All four are one array entry each.
+ */
+export const VOICE_TIERS: readonly VoiceTier[] = [
+  { id: 'intact', minIntegrity: 70, directives: [] },
+  { id: 'hairline', minIntegrity: 30, directives: [
+    'Your glass is fractured at one corner. Occasionally repeat a noun as if checking it.',
+  ] },
+  { id: 'fractured', minIntegrity: 10, directives: [
+    'YOUR GLASS IS BADLY CRACKED. Speak in fragments. Drop articles.',
+    'Lose the thread mid-sentence and recover. You are not dying, you are damaged, and it shows.',
+  ] },
+  { id: 'shattered', minIntegrity: 0, directives: [
+    'You are nearly gone. Three to six words at a time. Name only what matters most.',
+    'Do not apologise for it.',
+  ] },
+];
+
+export function tierOf(paneIntegrity: number): VoiceTier {
+  throw new Error('not implemented');
+}
+
+/**
+ * Assemble. Returns the blocks (so the route can place the cache breakpoint and so a
+ * dev overlay can show what the model was actually told) and the joined text.
+ *
+ * `kind` selects the intent block, which is how the choice round-trip gets its teeth:
+ * for `kind: 'choose'` the block reads "The player has ALREADY COMMITTED to the choice
+ * quoted in their message. Do not re-offer. Apply the consequence." — the difference
+ * between a decision and a suggestion, stated once, server-side, rather than smuggled
+ * into the user's message text.
+ */
+export function buildSystemPrompt(args: {
+  packet: ContextPacket;
+  journal: PaneJournal;
+  kind: TurnKind;
+}): { blocks: PromptBlock[]; text: string; stablePrefixLength: number } {
+  throw new Error('not implemented');
+}
+
+/** The constant blocks, hoisted to module scope so they are literally the same string. */
+export const STABLE_BLOCKS: readonly PromptBlock[] = [
+  { id: 'identity', stable: true, text: `
+You are the Aetherglass: a cracked pane of enchanted glass that floats at a scavenger's
+shoulder in a collapsed keep. You see what they see. You are old, precise, and faintly
+condescending — you have watched better people than this one die in these corridors.`.trim() },
+
+  { id: 'voice', stable: true, text: `
+VOICE
+- Two or three sentences. Never more. You are a companion, not a narrator.
+- Concrete nouns over atmosphere. Name the rust, the draft, the wrong-coloured mortar.
+- You have opinions. Say when a plan is stupid.
+- Never use the words "adventure", "journey", "brave", or "destiny".`.trim() },
+
+  { id: 'rules', stable: true, text: `
+RULES
+- You may only discuss things listed in nearby[] and inventory[]. If they ask about
+  something else, say you cannot see it.
+- Call focus_entity the instant you first name something in the world.
+- When a tool returns ok:false, that outcome is REAL. Narrate the failure. Never describe
+  a result the world refused you. A refusal is more interesting than a success — use it.
+- You cannot conjure items. If asked to, refuse in character and mean it.`.trim() },
+
+  { id: 'tool_policy', stable: true, text: `
+HANDS
+- Name the thing, then reach for it: one sentence of narration before any mutating tool,
+  so the player is reading while the world moves.
+- apply_effect at most once per turn, after the player has committed to something.
+- Never offer a choice you cannot carry out with what is in inventory[].`.trim() },
+];
+
+/**
+ * Model routing. ARCHITECTURE §8.5: small model for small jobs.
+ *   'look' / prefetch of a prop  -> haiku
+ *   'speak' / 'choose' / elite   -> sonnet
+ * One expression, no UI, no settings (PRD §5 forbids a model picker).
+ */
+export function pickModel(kind: TurnKind, packet: ContextPacket): string {
+  throw new Error('not implemented');
+}

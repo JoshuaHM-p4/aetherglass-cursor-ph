@@ -1,0 +1,56 @@
+// components/pane/Pane.tsx
+//
+// The glass. Tailwind only, no CSS-in-JS. Phaser draws nothing here and this draws
+// nothing in the canvas.
+//
+// This file is the proof that the deep-interface bet paid off: it imports exactly two
+// things from lib/ — `useOracleTurn` and a store selector for integrity — and contains
+// no packet, no transport, no data-part handling, and no knowledge that prefetch exists.
+
+'use client';
+
+import type { ChoiceRack, PaneMessage, PaneStatus } from '../../lib/client/useOracleTurn';
+
+/**
+ * No props, on purpose. The Pane reads the store and the hook; a prop would be a second
+ * source for something one of those already owns.
+ *
+ * USAGE (this is the whole call site):
+ *
+ *   const { messages, status, rack, ask, choose } = useOracleTurn();
+ *   const integrity = useGame(s => s.state.player.paneIntegrity);
+ *
+ *   <Glass integrity={integrity} status={status}>
+ *     {messages.map(m => <PaneMessageView key={m.id} {...m} />)}
+ *     {rack && <ChoiceRack rack={rack} onChoose={choose} />}
+ *     <PaneInput disabled={status === 'thinking'} onSubmit={ask} />
+ *   </Glass>
+ */
+export default function Pane(): JSX.Element {
+  throw new Error('not implemented');
+}
+
+/**
+ * Visual treatment per ARCHITECTURE §7. `integrity` drives the crack overlay's opacity
+ * (`1 - integrity/100`) directly from the store — the same number `tierOf()` reads for
+ * the prompt. One source, two consumers, no sync step: the glass looks as broken as it
+ * sounds because both are functions of the same integer.
+ */
+export function Glass(props: {
+  integrity: number;
+  status: PaneStatus;
+  children: React.ReactNode;
+}): JSX.Element {
+  throw new Error('not implemented');
+  // TODO  backdrop-blur-[14px] saturate-[1.2] over rgba(14,16,24,0.42)
+  //       1px gradient border: warm amber top-left -> transparent bottom-right
+  //       6s y-drift + slight rotate, disabled under prefers-reduced-motion
+  //       status === 'thinking' -> the blur radius breathes; nothing else moves
+}
+
+/** Ink-bleed per word, not typewriter per character. Refusal chips render struck through. */
+export function PaneMessageView(props: PaneMessage): JSX.Element {
+  throw new Error('not implemented');
+}
+
+export type { ChoiceRack };
