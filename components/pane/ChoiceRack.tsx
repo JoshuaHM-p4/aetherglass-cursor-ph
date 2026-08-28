@@ -15,7 +15,7 @@ export default function ChoiceRack({ rack, onChoose }: ChoiceRackProps): JSX.Ele
 
   return (
     <div className="mt-3 space-y-2">
-      <p className="font-serif text-[13px] leading-snug text-amber-100/80">{rack.prompt}</p>
+      <p className="font-pixel text-[10px] leading-snug text-amber-100/80">{rack.prompt}</p>
       <ul className="flex flex-col gap-1.5">
         {rack.choices.map((choice, i) => (
           <ChoiceRow
@@ -50,7 +50,7 @@ function ChoiceRow({
   const inner = (
     <>
       <RiskGlyph risk={choice.risk} />
-      <span className="font-serif text-[14px] leading-snug">{choice.label}</span>
+      <span className="font-pixel text-[11px] leading-snug">{choice.label}</span>
     </>
   );
   const frame =

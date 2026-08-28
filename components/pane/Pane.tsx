@@ -6,7 +6,7 @@
 'use client';
 
 import { motion, useReducedMotion } from 'motion/react';
-import { useEffect, useRef, type JSX, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, type JSX, type KeyboardEvent } from 'react';
 import { paneParagraphs } from '../../lib/client/paneText';
 import {
   useOracleTurn,
@@ -29,7 +29,9 @@ export default function Pane(): JSX.Element {
   );
   const thinking = status === 'thinking';
   const lastId = messages.at(-1)?.id;
+  const tail = messages.at(-1)?.text ?? '';
   const boxRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLOListElement>(null);
 
   useEffect(() => {
     bus.emit('pane:thinking', { thinking: status === 'thinking' || status === 'streaming' });
@@ -93,16 +95,27 @@ export default function Pane(): JSX.Element {
     return () => cancelAnimationFrame(raf);
   }, [activeEntityId]);
 
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, tail, status, rack?.status]);
+
   if (!activeEntityId) return <></>;
+
+  const pending = rack?.status === 'pending' ? rack : null;
 
   return (
     <div
       ref={boxRef}
-      className="pointer-events-auto absolute top-0 left-0 w-[min(260px,calc(100vw-1.5rem))]"
+      className="pointer-events-auto absolute top-0 left-0 flex max-h-[78vh] w-[min(260px,calc(100vw-1.5rem))] flex-col"
       style={{ visibility: 'hidden' }}
     >
       <Glass integrity={integrity} status={status} subject={entityName}>
-        <ol className="flex max-h-[42vh] min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+        <ol
+          ref={scrollerRef}
+          className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1"
+        >
           {messages.map((m) => (
             <li key={m.id}>
               <PaneMessageView
@@ -112,7 +125,11 @@ export default function Pane(): JSX.Element {
             </li>
           ))}
         </ol>
-        {rack && <ChoiceRack rack={rack} onChoose={choose} />}
+        {pending && (
+          <div className="shrink-0">
+            <ChoiceRack rack={pending} onChoose={choose} />
+          </div>
+        )}
         <PaneInput disabled={thinking} placeholder="speak" onSubmit={ask} />
       </Glass>
     </div>
@@ -132,7 +149,7 @@ export function Glass(props: {
   return (
     <motion.aside
       data-pane
-      className={`pane-glass pointer-events-auto relative flex max-h-[78vh] flex-col overflow-hidden px-4 py-3.5 ${
+      className={`pane-glass pointer-events-auto relative flex min-h-0 max-h-[78vh] flex-col overflow-hidden px-4 py-3.5 ${
         props.status === 'thinking' ? 'pane-thinking' : ''
       } ${dormant ? 'opacity-80' : 'opacity-100'}`}
       animate={
@@ -185,7 +202,7 @@ export function PaneMessageView(
 ): JSX.Element {
   if (props.role === 'player') {
     return (
-      <p className="font-serif text-[13px] text-white/45 italic">
+      <p className="font-pixel text-[10px] leading-snug text-white/45">
         {props.text}
       </p>
     );
@@ -194,7 +211,7 @@ export function PaneMessageView(
   const stanzas = paneParagraphs(props.text);
   if (stanzas.length === 0) {
     return props.streaming ? (
-      <p className="font-serif text-[16px] leading-[1.55] text-amber-50/90">
+      <p className="font-pixel text-[11px] leading-[1.65] text-amber-50/90">
         <span className="inline-block animate-pulse text-amber-300/80">▌</span>
       </p>
     ) : (
@@ -207,7 +224,7 @@ export function PaneMessageView(
       {props.streaming ? (
         <div className="space-y-2.5">
           {stanzas.map((stanza, i) => (
-            <p key={i} className="font-serif text-[16px] leading-[1.55] text-amber-50/90">
+            <p key={i} className="font-pixel text-[11px] leading-[1.65] text-amber-50/90">
               {stanza}
               {i === stanzas.length - 1 && (
                 <span className="ml-0.5 inline-block animate-pulse text-amber-300/80">▌</span>
@@ -238,10 +255,10 @@ function InkBleed({ text }: { text: string }) {
   const reduced = useReducedMotion();
   const words = text.length === 0 ? [] : text.split(/(\s+)/);
   if (reduced) {
-    return <p className="font-serif text-[16px] leading-relaxed text-amber-50/90">{text}</p>;
+    return <p className="font-pixel text-[11px] leading-[1.65] text-amber-50/90">{text}</p>;
   }
   return (
-    <p className="font-serif text-[16px] leading-[1.55] text-amber-50/90">
+    <p className="font-pixel text-[11px] leading-[1.65] text-amber-50/90">
       {words.map((word, i) =>
         word.trim() === '' ? (
           <span key={i}>{word}</span>
@@ -284,7 +301,7 @@ function PaneInput({
 
   return (
     <form
-      className="mt-3 border-t border-amber-400/20 pt-2"
+      className="mt-3 shrink-0 border-t border-amber-400/20 pt-2"
       onSubmit={(event) => {
         event.preventDefault();
         const text = String(new FormData(event.currentTarget).get('ask') ?? '').trim();
@@ -304,7 +321,7 @@ function PaneInput({
         onBlur={() => setPaneTyping(false)}
         onKeyDown={keepKeys}
         onKeyUp={keepKeys}
-        className="w-full bg-transparent font-serif text-[15px] text-amber-50/90 outline-none placeholder:text-amber-100/30 disabled:opacity-40"
+        className="w-full bg-transparent font-pixel text-[11px] text-amber-50/90 outline-none placeholder:text-amber-100/30 disabled:opacity-40"
         placeholder={placeholder}
       />
     </form>

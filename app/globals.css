@@ -37,6 +37,9 @@ main {
 }
 
 .pane-glass {
+  font-family: var(--font-pixel);
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
   background:
     linear-gradient(rgba(14, 16, 24, 0.42), rgba(14, 16, 24, 0.55)) padding-box,
     linear-gradient(135deg, rgba(201, 168, 106, 0.85) 0%, rgba(201, 168, 106, 0.15) 38%, transparent 70%)
