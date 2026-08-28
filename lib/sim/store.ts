@@ -26,6 +26,9 @@
 // screen is a fact about one chat turn.
 // ===========================================================================
 
+import { createStore } from 'zustand/vanilla';
+import { bus } from '../../game/EventBus';
+import { applyAction, initialState } from './reducer';
 import type {
   Action, ActionOrigin, GameState, RejectReason, SimEvent,
 } from './types';
@@ -96,16 +99,37 @@ export interface GameStore {
   hydrate(state: GameState): void;
 }
 
-export const gameStore: {
-  getState(): GameStore;
-  setState(partial: Partial<GameStore>): void;
-  subscribe(listener: (s: GameStore, prev: GameStore) => void): () => void;
-} = null as never; // createStore<GameStore>((set, get) => ({ ... }))
+export const gameStore = createStore<GameStore>((set, get) => {
+  const appliedKeys = new Set<string>();
+  return {
+    state: initialState(),
+    rev: 0,
+    dispatch(action, _origin) {
+      const { state, rev } = get();
+      const result = applyAction(state, action);
+      if (!result.ok) {
+        return { ok: false, reason: result.reason, events: result.events, rev };
+      }
+      const nextRev = rev + 1;
+      set({ state: result.state, rev: nextRev });
+      for (const event of result.events) bus.emit('sim:event', event);
+      return { ok: true, events: result.events, rev: nextRev };
+    },
+    applyVerdict(_proposal) {
+      throw new Error('not implemented');
+    },
+    hydrate(state) {
+      appliedKeys.clear();
+      set({ state, rev: 0 });
+      bus.emit('sim:hydrated', { entityCount: Object.keys(state.entities).length });
+    },
+  };
+});
 
 /**
  * Convenience for the 90% of readers that want the world and not the plumbing.
  * `gameStore.getState().state` reads badly at every call site.
  */
 export function world(): GameState {
-  throw new Error('not implemented');
+  return gameStore.getState().state;
 }

@@ -28,6 +28,9 @@
 // "no unguarded mutation" expressed as a type rather than a code review.
 // ===========================================================================
 
+import { recipe } from './recipes';
+import { isKnownItem } from './registry';
+import { bagHasRoomFor, findItem, heldQty, isAdjacent } from './select';
 import type { Action, GameState, ItemTag, RejectReason } from './types';
 
 /** The result of asking permission. Never throws; failure is a value. */
@@ -37,7 +40,7 @@ export type CheckResult =
 
 export const PASS: CheckResult = { ok: true };
 export function fail(reason: RejectReason): CheckResult {
-  throw new Error('not implemented');
+  return { ok: false, reason };
 }
 
 type Guard<A extends Action> = (state: GameState, action: A) => CheckResult;
@@ -48,13 +51,22 @@ type Guard<A extends Action> = (state: GameState, action: A) => CheckResult;
  */
 type Guards = { [K in Action['type']]: Guard<Extract<Action, { type: K }>> };
 
+/** Internal resolution of the hardcoded H1/H2 map. Collision is Phaser's job. */
+const MAP_TX = 30;
+const MAP_TY = 17;
+
 export const guards: Guards = {
   /** Bounds and collision are Phaser's job; the sim only rejects impossible tiles. */
-  MOVE: () => { throw new Error('not implemented'); },
+  MOVE: (_state, action) => {
+    if (action.tx < 0 || action.tx >= MAP_TX || action.ty < 0 || action.ty >= MAP_TY) {
+      return fail('not_nearby');
+    }
+    return PASS;
+  },
 
   /** Clamped by DAMAGE_CAP_PER_TURN upstream in the schema; `already_dead` here. */
-  DAMAGE: () => { throw new Error('not implemented'); },
-  HEAL: () => { throw new Error('not implemented'); },
+  DAMAGE: (state) => (state.player.hp <= 0 ? fail('already_dead') : PASS),
+  HEAL: () => PASS,
 
   /**
    * CLOSED-WORLD GRANT (AGENTS.md #3). Three conjunctive conditions:
@@ -66,30 +78,84 @@ export const guards: Guards = {
    * `fromEntityId` is rejected outright — there is no such thing as an item from
    * nowhere, and that rejection is the demo's third beat.
    */
-  GRANT_ITEM: () => { throw new Error('not implemented'); },
+  GRANT_ITEM: (state, action) => {
+    if (!isKnownItem(action.itemId)) return fail('no_such_item');
+    if (!action.fromEntityId) return fail('no_such_entity');
+    const source = state.entities[action.fromEntityId];
+    if (!source) return fail('no_such_entity');
+    if (!source.contents?.includes(action.itemId)) return fail('not_in_contents');
+    if (!bagHasRoomFor(state, action.itemId)) return fail('bag_full');
+    return PASS;
+  },
 
-  CONSUME_ITEM: () => { throw new Error('not implemented'); },
+  CONSUME_ITEM: (state, action) => {
+    const need = action.qty ?? 1;
+    if (heldQty(state, action.itemId) < need) return fail('not_in_bag');
+    return PASS;
+  },
 
   /** not_nearby / wrong_kind / already_open / locked, in that order. */
-  OPEN_CONTAINER: () => { throw new Error('not implemented'); },
+  OPEN_CONTAINER: (state, action) => {
+    const entity = state.entities[action.entityId];
+    if (!entity) return fail('no_such_entity');
+    if (!isAdjacent(state, action.entityId)) return fail('not_nearby');
+    if (entity.kind !== 'container') return fail('wrong_kind');
+    if (entity.state === 'open') return fail('already_open');
+    if (entity.locked) return fail('locked');
+    for (const id of entity.contents ?? []) {
+      if (!isKnownItem(id)) return fail('no_such_item');
+      if (!bagHasRoomFor(state, id)) return fail('bag_full');
+    }
+    return PASS;
+  },
 
   /**
    * The tag-matching rule — the highest-leverage guard in the game. Delegates to
    * `defeatsSeal` so that adding an item with `pry` gives every `sealed` object in
    * the world a new solution with no new branch here. ARCHITECTURE §3.
    */
-  UNLOCK: () => { throw new Error('not implemented'); },
+  UNLOCK: (state, action) => {
+    const entity = state.entities[action.entityId];
+    if (!entity) return fail('no_such_entity');
+    if (!isAdjacent(state, action.entityId)) return fail('not_nearby');
+    if (entity.kind !== 'container' && entity.kind !== 'door') return fail('wrong_kind');
+    if (!entity.locked) return fail('already_open');
+    const item = findItem(state, action.withItemId);
+    if (!item) return fail('not_in_bag');
+    const obstacle = entity.tags.some((t) => SEAL_TAGS.has(t)) ? entity.tags : ['locked'];
+    return defeatsSeal(item.tags, obstacle);
+  },
 
-  CRAFT: () => { throw new Error('not implemented'); },
+  CRAFT: (state, action) => {
+    const rec = recipe(action.recipeId);
+    if (!rec) return fail('no_such_item');
+    for (const [id, qty] of Object.entries(rec.inputs)) {
+      if (heldQty(state, id) < qty) return fail('missing_ingredients');
+    }
+    if (!bagHasRoomFor(state, rec.output)) return fail('bag_full');
+    return PASS;
+  },
 
   /** set_flag is restricted to a fixed enum: QUEST_FLAGS. Otherwise `unknown_flag`. */
-  SET_FLAG: () => { throw new Error('not implemented'); },
+  SET_FLAG: (_state, action) => (isQuestFlag(action.flag) ? PASS : fail('unknown_flag')),
 
-  SET_ENTITY_STATE: () => { throw new Error('not implemented'); },
-  DAMAGE_PANE: () => { throw new Error('not implemented'); },
+  SET_ENTITY_STATE: (state, action) => {
+    const entity = state.entities[action.entityId];
+    if (!entity) return fail('no_such_entity');
+    if (entity.state === 'dead') return fail('already_dead');
+    return PASS;
+  },
+  DAMAGE_PANE: () => PASS,
 
   /** Keyboard-only in practice, but guarded identically: adjacency, kind, not already dead. */
-  STRIKE_ENTITY: () => { throw new Error('not implemented'); },
+  STRIKE_ENTITY: (state, action) => {
+    const entity = state.entities[action.entityId];
+    if (!entity) return fail('no_such_entity');
+    if (!isAdjacent(state, action.entityId)) return fail('not_nearby');
+    if (entity.kind !== 'enemy' && entity.kind !== 'elite') return fail('wrong_kind');
+    if (entity.state === 'dead') return fail('already_dead');
+    return PASS;
+  },
 };
 
 /**
@@ -98,12 +164,14 @@ export const guards: Guards = {
  * have moved since the packet was built). Both call sites want the same answer.
  */
 export function check(state: GameState, action: Action): CheckResult {
-  throw new Error('not implemented');
+  return (guards[action.type] as Guard<Action>)(state, action);
 }
 
 // ---------------------------------------------------------------- shared predicates
 // Internal to this file's guards, exported only where a non-Action caller genuinely
 // needs the same judgement (tools.ts `offer_choices`, the LDtk loader's validation).
+
+const SEAL_TAGS = new Set(['sealed', 'locked', 'barred', 'runed', 'frozen']);
 
 /**
  * Does this item's tag set defeat this obstacle's tag set? The whole of the
@@ -118,7 +186,24 @@ export function check(state: GameState, action: Action): CheckResult {
  * Returns the reason on failure so UNLOCK can say `wrong_tool` vs `locked`.
  */
 export function defeatsSeal(itemTags: ItemTag[], obstacleTags: string[]): CheckResult {
-  throw new Error('not implemented');
+  const held = new Set(itemTags);
+  const has = (tag: ItemTag) => held.has(tag);
+  const present = [...SEAL_TAGS].filter((seal) => obstacleTags.includes(seal));
+  if (present.length === 0) return PASS;
+  for (const seal of present) {
+    const ok =
+      seal === 'sealed'
+        ? has('pry') || has('burning') || (has('sharp') && has('heavy'))
+        : seal === 'locked'
+          ? has('key') || (has('pry') && obstacleTags.includes('fragile'))
+          : seal === 'barred'
+            ? has('heavy') || has('blunt')
+            : seal === 'runed'
+              ? has('arcane')
+              : has('burning');
+    if (!ok) return fail('wrong_tool');
+  }
+  return PASS;
 }
 
 /** Quest flags the Pane may set. ARCHITECTURE §4: "set_flag is restricted to a fixed enum". */
@@ -132,7 +217,7 @@ export const QUEST_FLAGS = [
 export type QuestFlag = (typeof QUEST_FLAGS)[number];
 
 export function isQuestFlag(flag: string): flag is QuestFlag {
-  throw new Error('not implemented');
+  return (QUEST_FLAGS as readonly string[]).includes(flag);
 }
 
 /** Per-turn ceilings. ARCHITECTURE §4: "a single unlucky roll can't end the demo". */
