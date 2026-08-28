@@ -45,38 +45,54 @@ export function nearestEntities(
   state: GameState,
   limit: number = NEARBY_LIMIT,
 ): RankedEntity[] {
-  throw new Error('not implemented');
+  const { tx, ty } = state.player;
+  return Object.values(state.entities)
+    .map((e): RankedEntity => ({ ...e, d: Math.max(Math.abs(e.tx - tx), Math.abs(e.ty - ty)) }))
+    .sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, limit);
 }
 
-/** Chebyshev tile distance from player to entity. */
+/** Chebyshev tile distance from player to entity. Infinity if the id does not resolve. */
 export function distanceTo(state: GameState, entityId: string): number {
-  throw new Error('not implemented');
+  const entity = state.entities[entityId];
+  if (!entity) return Infinity;
+  const { tx, ty } = state.player;
+  return Math.max(Math.abs(entity.tx - tx), Math.abs(entity.ty - ty));
 }
 
 /** True when the player could reach out and touch it. The precondition for every interaction. */
 export function isAdjacent(state: GameState, entityId: string): boolean {
-  throw new Error('not implemented');
+  return distanceTo(state, entityId) <= REACH_TILES;
 }
 
 /** The bag entry for an id, or undefined. Stacks are one entry with qty > 1. */
 export function findItem(state: GameState, itemId: string): Item | undefined {
-  throw new Error('not implemented');
+  return state.player.bag.find((item) => item.id === itemId);
 }
 
 /** Total quantity held of an id (0 when absent). */
 export function heldQty(state: GameState, itemId: string): number {
-  throw new Error('not implemented');
+  return findItem(state, itemId)?.qty ?? 0;
 }
 
 /** Occupied slots vs BAG_SLOTS. A new stackable id needs a free slot; a top-up does not. */
 export function bagHasRoomFor(state: GameState, itemId: string): boolean {
-  throw new Error('not implemented');
+  const existing = findItem(state, itemId);
+  if (existing?.stackable) return true;
+  return state.player.bag.length < BAG_SLOTS;
 }
 
 /**
- * Hearts for StatGlyphs: 12 internal HP -> 6 containers at half-heart granularity.
+ * Hearts for StatGlyphs: hpMax HP -> hpMax/2 containers at half-heart granularity.
  * Derived, never stored. PRD §4.1.
  */
 export function hearts(state: GameState): Array<'full' | 'half' | 'empty'> {
-  throw new Error('not implemented');
+  const { hp, hpMax } = state.player;
+  const containers = Math.floor(hpMax / 2);
+  return Array.from({ length: containers }, (_, i) => {
+    const remaining = hp - i * 2;
+    if (remaining >= 2) return 'full';
+    if (remaining === 1) return 'half';
+    return 'empty';
+  });
 }

@@ -13,19 +13,79 @@ import type { Item } from './types';
 export type ItemTemplate = Omit<Item, 'qty'> & { qty?: never };
 
 export const ITEM_REGISTRY: Readonly<Record<string, ItemTemplate>> = {
-  // crowbar:   { id: 'crowbar', name: 'iron crowbar', kind: 'tool', tags: ['pry','heavy','iron'] ... }
-  // sword_short, key_brass, mushroom_foul, ore_iron, potion_dim, pane_shard, torch_stub
+  crowbar: {
+    id: 'crowbar',
+    name: 'iron crowbar',
+    kind: 'tool',
+    tags: ['pry', 'heavy'],
+    stackable: false,
+  },
+  sword_short: {
+    id: 'sword_short',
+    name: 'short sword',
+    kind: 'weapon',
+    tags: ['sharp'],
+    stackable: false,
+    stats: { damage: 2, reach: 1 },
+  },
+  key_brass: {
+    id: 'key_brass',
+    name: 'brass key',
+    kind: 'key',
+    tags: ['key'],
+    stackable: false,
+  },
+  mushroom_foul: {
+    id: 'mushroom_foul',
+    name: 'foul mushroom',
+    kind: 'consumable',
+    tags: ['foul', 'edible'],
+    stackable: true,
+  },
+  ore_iron: {
+    id: 'ore_iron',
+    name: 'iron ore',
+    kind: 'material',
+    tags: ['heavy', 'reagent'],
+    stackable: true,
+  },
+  potion_dim: {
+    id: 'potion_dim',
+    name: 'dim potion',
+    kind: 'consumable',
+    tags: ['arcane'],
+    stackable: true,
+    stats: { heal: 4 },
+  },
+  pane_shard: {
+    id: 'pane_shard',
+    name: 'shard of the pane',
+    kind: 'relic',
+    tags: ['arcane', 'fragile', 'light'],
+    stackable: false,
+  },
+  torch_stub: {
+    id: 'torch_stub',
+    name: 'torch stub',
+    kind: 'tool',
+    tags: ['burning', 'light'],
+    stackable: true,
+  },
 } as unknown as Readonly<Record<string, ItemTemplate>>;
 
 export type ItemId = keyof typeof ITEM_REGISTRY & string;
 
 export function isKnownItem(id: string): boolean {
-  throw new Error('not implemented');
+  return Object.prototype.hasOwnProperty.call(ITEM_REGISTRY, id);
 }
 
 /** Fresh bag-ready instance. Throws only on a programmer error (unknown id after a guard). */
 export function instantiate(id: string, qty = 1): Item {
-  throw new Error('not implemented');
+  const template = ITEM_REGISTRY[id];
+  if (!template) {
+    throw new Error(`instantiate: unknown item id "${id}"`);
+  }
+  return { ...template, qty };
 }
 
 /**
@@ -34,5 +94,5 @@ export function instantiate(id: string, qty = 1): Item {
  * ids so `lib/ldtk/load.ts` can throw with a useful message at H8 instead of at demo time.
  */
 export function unknownItemIds(ids: readonly string[]): string[] {
-  throw new Error('not implemented');
+  return ids.filter((id) => !isKnownItem(id));
 }

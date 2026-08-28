@@ -33,5 +33,5 @@ export function findRecipesFor(state: GameState, materialIds: readonly string[])
 }
 
 export function recipe(id: string): Recipe | undefined {
-  throw new Error('not implemented');
+  return RECIPES.find((r) => r.id === id);
 }
