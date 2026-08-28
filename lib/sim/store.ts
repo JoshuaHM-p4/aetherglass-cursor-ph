@@ -29,6 +29,7 @@
 import { createStore } from 'zustand/vanilla';
 import { bus } from '../../game/EventBus';
 import { applyAction, initialState } from './reducer';
+import { check } from './rules';
 import type {
   Action, ActionOrigin, GameState, RejectReason, SimEvent,
 } from './types';
@@ -97,6 +98,9 @@ export interface GameStore {
 
   /** Boot / LDtk load. Resets rev to 0 and the applied-verdict set. */
   hydrate(state: GameState): void;
+
+  /** Enter on an adjacent entity. Not an Action: the target is UI fact, not world fact. */
+  setInteractTarget(entityId: string | null): void;
 }
 
 export const gameStore = createStore<GameStore>((set, get) => {
@@ -115,13 +119,33 @@ export const gameStore = createStore<GameStore>((set, get) => {
       for (const event of result.events) bus.emit('sim:event', event);
       return { ok: true, events: result.events, rev: nextRev };
     },
-    applyVerdict(_proposal) {
-      throw new Error('not implemented');
+    applyVerdict(proposal) {
+      if (appliedKeys.has(proposal.key)) return { status: 'duplicate' as const };
+      appliedKeys.add(proposal.key);
+      if (!proposal.ok) {
+        return { status: 'refused' as const, reason: proposal.reason ?? 'no_such_entity' };
+      }
+      const live = check(get().state, proposal.action);
+      if (!live.ok) {
+        bus.emit('sim:desync', {
+          entityId: entityIdOf(proposal.action),
+          action: proposal.action.type,
+          reason: live.reason,
+        });
+        return { status: 'diverged' as const, reason: live.reason };
+      }
+      const result = get().dispatch(proposal.action, 'pane');
+      return { status: 'applied' as const, events: result.events };
     },
     hydrate(state) {
       appliedKeys.clear();
       set({ state, rev: 0 });
       bus.emit('sim:hydrated', { entityCount: Object.keys(state.entities).length });
+    },
+    setInteractTarget(entityId) {
+      const next = structuredClone(get().state);
+      next.ui.interactTargetId = entityId;
+      set({ state: next, rev: get().rev + 1 });
     },
   };
 });
@@ -132,4 +156,10 @@ export const gameStore = createStore<GameStore>((set, get) => {
  */
 export function world(): GameState {
   return gameStore.getState().state;
+}
+
+function entityIdOf(action: Action): string | null {
+  if ('entityId' in action) return action.entityId;
+  if ('fromEntityId' in action) return action.fromEntityId ?? null;
+  return null;
 }

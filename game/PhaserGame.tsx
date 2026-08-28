@@ -6,6 +6,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { installWorldAdapter } from './EventBus';
 import { StartGame } from './main';
 
 export default function PhaserGame() {
@@ -13,8 +14,10 @@ export default function PhaserGame() {
 
   useEffect(() => {
     if (gameRef.current) return;
+    const teardownAdapter = installWorldAdapter();
     gameRef.current = StartGame('game-container');
     return () => {
+      teardownAdapter();
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };

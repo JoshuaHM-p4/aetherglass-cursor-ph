@@ -6,6 +6,10 @@
 // while the sentence is still being read. Nothing here waits for the message to finish.
 
 import type { FocusData } from '../../lib/oracle/protocol';
+import { bus } from '../EventBus';
+
+const GAME_WIDTH = 480;
+const GAME_HEIGHT = 270;
 
 export interface FocusSceneParts {
   /** Container whose children are named with entity ids. `getByName(entityId)` is the lookup. */
@@ -39,12 +43,63 @@ export const FOCUS_TIMING = {
 export function installFocusSystem(
   scene: Phaser.Scene & FocusSceneParts,
 ): () => void {
-  throw new Error('not implemented');
-  // TODO
-  //   bus.on('pane:focus', ({ entityId, style }) => { ... })
-  //   bus.on('pane:focus_clear', release)
-  //   style 'shatter' additionally: camera shake + the glass-crack SFX
-  //   respect prefers-reduced-motion: skip the pan, keep the dim (read once, in Boot)
+  let focused: string | null = null;
+  let releaseTimer: Phaser.Time.TimerEvent | null = null;
+  const reduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const release = () => {
+    releaseTimer?.remove();
+    releaseTimer = null;
+    focused = null;
+    scene.tweens.add({
+      targets: scene.dimLayer,
+      alpha: 0,
+      duration: FOCUS_TIMING.dimOut,
+    });
+    scene.spotlight.setVisible(false);
+    scene.leaderLine.clear();
+    if (!reduced) scene.cameras.main.pan(GAME_WIDTH / 2, GAME_HEIGHT / 2, FOCUS_TIMING.dimOut);
+  };
+
+  const onFocus = ({ entityId, style }: FocusData) => {
+    const target = scene.entityLayer.getByName(entityId) as Phaser.GameObjects.Image | null;
+    if (!target) return;
+    if (focused === entityId) {
+      applyFocusStyle(scene, target, 'pulse');
+      return;
+    }
+    focused = entityId;
+    scene.tweens.killTweensOf(scene.dimLayer);
+    scene.tweens.add({
+      targets: scene.dimLayer,
+      alpha: 0.55,
+      duration: FOCUS_TIMING.dimIn,
+    });
+    scene.spotlight.setPosition(target.x, target.y).setVisible(true).setAlpha(0.85);
+    if (!reduced) {
+      scene.cameras.main.pan(target.x, target.y, FOCUS_TIMING.cameraPan, 'Sine.easeInOut');
+    }
+    applyFocusStyle(scene, target, style);
+    scene.time.delayedCall(FOCUS_TIMING.leaderDelay, () => {
+      if (focused !== entityId) return;
+      scene.leaderLine.clear();
+      scene.leaderLine.lineStyle(1, 0xc9a86a, 0.7);
+      scene.leaderLine.lineBetween(GAME_WIDTH, GAME_HEIGHT / 2, target.x, target.y);
+    });
+    releaseTimer?.remove();
+    releaseTimer = scene.time.delayedCall(FOCUS_TIMING.dwell, release);
+  };
+
+  const offFocus = bus.on('pane:focus', onFocus);
+  const offClear = bus.on('pane:focus_clear', release);
+
+  return () => {
+    offFocus();
+    offClear();
+    releaseTimer?.remove();
+  };
 }
 
 export function applyFocusStyle(
@@ -52,5 +107,16 @@ export function applyFocusStyle(
   target: Phaser.GameObjects.GameObject,
   style: FocusData['style'],
 ): void {
-  throw new Error('not implemented');
+  if (style === 'pulse') {
+    scene.tweens.add({
+      targets: target,
+      scale: { from: 0.9, to: 1.15 },
+      yoyo: true,
+      repeat: 2,
+      duration: 300,
+    });
+  }
+  if (style === 'shatter') {
+    scene.cameras.main.shake(180, 0.004);
+  }
 }

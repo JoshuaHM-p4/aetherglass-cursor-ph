@@ -30,6 +30,7 @@
 // reason to bother, since a silently-misspelled event is invisible until the demo.
 // ===========================================================================
 
+import { findItem } from '../lib/sim/select';
 import type { Facing, RejectReason, SimEvent } from '../lib/sim/types';
 import type { FocusData } from '../lib/oracle/protocol';
 
@@ -103,8 +104,10 @@ export interface TypedBus {
  * A dependency-free emitter behind the typed facade. The template's
  * Phaser.Events.EventEmitter would do the same job, but importing `phaser` at
  * module scope pulls the whole renderer into anything that touches the bus,
- * including code a server component might reach (AGENTS.md #7). This module
- * imports types only and stays importable everywhere.
+ * including code a server component might reach (AGENTS.md #7). The only value
+ * this module imports is the store, which is framework-free, so the bus stays
+ * importable everywhere. That import closes a cycle (store imports `bus`) which
+ * is safe only because neither module touches the other at evaluation time.
  */
 function createBus(): TypedBus {
   const listeners = new Map<BusEventName, Set<(payload: never) => void>>();
@@ -144,11 +147,50 @@ export const bus: TypedBus = createBus();
  * reducer.ts decides.
  */
 export function installWorldAdapter(): () => void {
-  throw new Error('not implemented');
-  // TODO
-  //   world:tile_entered   -> MOVE
-  //   world:attack_landed  -> STRIKE_ENTITY   (then SET_ENTITY_STATE 'dead' if hp <= 0,
-  //                                            decided by the reducer, not here)
-  //   world:player_hurt    -> DAMAGE, and DAMAGE_PANE on heavy hits
-  //   world:interact       -> SET_UI interact target (store method, not an Action)
+  const { gameStore } = require('../lib/sim/store') as typeof import('../lib/sim/store');
+  const offTile = bus.on('world:tile_entered', ({ tx, ty, facing }) => {
+    gameStore.getState().dispatch({ type: 'MOVE', facing, tx, ty }, 'keyboard');
+  });
+  const offAttack = bus.on('world:attack_landed', ({ entityId, withItemId }) => {
+    gameStore.getState().dispatch(
+      { type: 'STRIKE_ENTITY', entityId, amount: swingDamage(withItemId), withItemId },
+      'keyboard',
+    );
+  });
+  const offHurt = bus.on('world:player_hurt', ({ amount, source }) => {
+    const { dispatch } = gameStore.getState();
+    dispatch({ type: 'DAMAGE', amount, source }, 'keyboard');
+    if (amount >= HEAVY_HIT) {
+      dispatch({ type: 'DAMAGE_PANE', amount: HEAVY_HIT_PANE_DAMAGE }, 'keyboard');
+    }
+  });
+  const offInteract = bus.on('world:interact', ({ entityId }) => {
+    gameStore.getState().setInteractTarget(entityId);
+  });
+  const offClear = bus.on('world:interact_clear', () => {
+    gameStore.getState().setInteractTarget(null);
+  });
+
+  return () => {
+    offTile();
+    offAttack();
+    offHurt();
+    offInteract();
+    offClear();
+  };
+}
+
+/** A hit this size cracks the glass as well as the player. */
+const HEAVY_HIT = 3;
+const HEAVY_HIT_PANE_DAMAGE = 10;
+const BARE_HANDS_DAMAGE = 1;
+
+/**
+ * Phaser names the item it swung with; the amount is the sim's business. The reducer
+ * clamps it to LIMITS.damagePerEffect either way, so a bad weapon stat cannot one-shot.
+ */
+function swingDamage(withItemId: string | null): number {
+  const { gameStore } = require('../lib/sim/store') as typeof import('../lib/sim/store');
+  if (!withItemId) return BARE_HANDS_DAMAGE;
+  return findItem(gameStore.getState().state, withItemId)?.stats?.damage ?? BARE_HANDS_DAMAGE;
 }

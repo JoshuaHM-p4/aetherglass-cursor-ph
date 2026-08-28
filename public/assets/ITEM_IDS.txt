@@ -1,0 +1,10 @@
+# Registry ids (keep Pane prompt copy in lockstep)
+
+- crowbar
+- sword_short
+- key_brass
+- mushroom_foul
+- ore_iron
+- potion_dim
+- pane_shard
+- torch_stub

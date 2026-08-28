@@ -9,6 +9,7 @@
 import Phaser from 'phaser';
 import { Boot } from './scenes/Boot';
 import { Preload } from './scenes/Preload';
+import { Overworld } from './scenes/Overworld';
 
 export const GAME_WIDTH = 480;
 export const GAME_HEIGHT = 270;
@@ -25,6 +26,6 @@ export function StartGame(parent: string): Phaser.Game {
     backgroundColor: '#0b0d14',
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     physics: { default: 'arcade', arcade: { debug: false } },
-    scene: [Boot, Preload],
+    scene: [Boot, Preload, Overworld],
   });
 }
