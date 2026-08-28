@@ -99,8 +99,38 @@ export interface TypedBus {
   clear(): void;
 }
 
-/** Wraps the template's Phaser.Events.EventEmitter singleton. Module-scope safe: no `window`. */
-export const bus: TypedBus = null as never;
+/**
+ * A dependency-free emitter behind the typed facade. The template's
+ * Phaser.Events.EventEmitter would do the same job, but importing `phaser` at
+ * module scope pulls the whole renderer into anything that touches the bus,
+ * including code a server component might reach (AGENTS.md #7). This module
+ * imports types only and stays importable everywhere.
+ */
+function createBus(): TypedBus {
+  const listeners = new Map<BusEventName, Set<(payload: never) => void>>();
+  return {
+    emit(event, payload) {
+      listeners.get(event)?.forEach((fn) => (fn as (p: unknown) => void)(payload));
+    },
+    on(event, fn) {
+      let set = listeners.get(event);
+      if (!set) {
+        set = new Set();
+        listeners.set(event, set);
+      }
+      set.add(fn as never);
+      return () => set.delete(fn as never);
+    },
+    off(event, fn) {
+      listeners.get(event)?.delete(fn as never);
+    },
+    clear() {
+      listeners.clear();
+    },
+  };
+}
+
+export const bus: TypedBus = createBus();
 
 /**
  * Installed once at app start. Translates `world:*` moments into Actions and dispatches

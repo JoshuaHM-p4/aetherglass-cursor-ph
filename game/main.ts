@@ -1,0 +1,30 @@
+// game/main.ts
+//
+// Phaser.Game config. Pixel-art constants from ASSETS.md section 1: 16px tiles,
+// 480x270 internal resolution, CSS scales up. Client-only module: nothing here
+// may be imported from a server component (AGENTS.md #7).
+//
+// Overworld joins the scene list at H2; Boot alone proves the canvas at H0.
+
+import Phaser from 'phaser';
+import { Boot } from './scenes/Boot';
+import { Preload } from './scenes/Preload';
+
+export const GAME_WIDTH = 480;
+export const GAME_HEIGHT = 270;
+export const TILE = 16;
+
+export function StartGame(parent: string): Phaser.Game {
+  return new Phaser.Game({
+    type: Phaser.AUTO,
+    parent,
+    width: GAME_WIDTH,
+    height: GAME_HEIGHT,
+    pixelArt: true,
+    roundPixels: true,
+    backgroundColor: '#0b0d14',
+    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    physics: { default: 'arcade', arcade: { debug: false } },
+    scene: [Boot, Preload],
+  });
+}
