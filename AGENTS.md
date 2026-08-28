@@ -33,8 +33,8 @@ this project is architectural drift under time pressure, and drift is invisible 
 7. **No `window`, `document`, or `Phaser` references at module scope** in anything reachable from
    a server component. Guard or move inside a lifecycle method.
 
-8. **The API key lives only in `app/api/oracle/route.ts`.** No `NEXT_PUBLIC_` AI keys, no
-   client-side fetches to a model provider.
+8. **Provider keys live only in `app/api/oracle/route.ts`.** `ANTHROPIC_API_KEY` (default)
+   or `OPENAI_API_KEY`. No `NEXT_PUBLIC_` AI keys, no client-side fetches to a model provider.
 
 ---
 

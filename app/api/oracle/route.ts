@@ -1,19 +1,22 @@
 // app/api/oracle/route.ts
 //
-// The only place ANTHROPIC_API_KEY exists (AGENTS.md #8). No NEXT_PUBLIC_ AI keys, no
-// client-side fetch to a model provider.
+// The only place provider keys are read (AGENTS.md #8). No NEXT_PUBLIC_ AI keys, no
+// client-side fetch to a model provider. Claude if ANTHROPIC_API_KEY is set, else GPT.
 //
 // Thin by construction: parse, fork, stream, respond. Every decision it looks like it is
 // making is made somewhere testable — the prompt in prompt.ts, the tools in tools.ts, the
 // legality in rules.ts, the packet in context.ts.
 
 import { anthropic } from '@ai-sdk/anthropic';
+import { openai } from '@ai-sdk/openai';
 import {
   convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse,
   stepCountIs, streamText,
   type UIMessage,
 } from 'ai';
-import { buildSystemPrompt, pickModel } from '../../../lib/oracle/prompt';
+import {
+  buildSystemPrompt, pickModel, type OracleProvider,
+} from '../../../lib/oracle/prompt';
 import { createTurnSim, parseOracleRequest } from '../../../lib/oracle/turn';
 
 export const maxDuration = 30;
@@ -43,6 +46,13 @@ export async function POST(req: Request) {
 
   const { messages, snapshot, journal, turnId, kind } = parsed;
 
+  let provider: OracleProvider;
+  try {
+    provider = resolveOracleProvider();
+  } catch {
+    return new Response('the glass has gone dark', { status: 503 });
+  }
+
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       const turn = createTurnSim({ snapshot, journal, turnId, kind, writer });
@@ -51,13 +61,16 @@ export async function POST(req: Request) {
         journal,
         kind,
       });
+      const modelId = pickModel(kind, turn.packet, provider);
 
       const result = streamText({
-        model: anthropic(pickModel(kind, turn.packet)),
+        model: provider === 'anthropic' ? anthropic(modelId) : openai(modelId),
         system,
         messages: await convertToModelMessages(messages as UIMessage[]),
         stopWhen: stepCountIs(4),
-        providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
+        ...(provider === 'anthropic'
+          ? { providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } }
+          : {}),
       });
 
       writer.merge(result.toUIMessageStream());
@@ -66,4 +79,16 @@ export async function POST(req: Request) {
   });
 
   return createUIMessageStreamResponse({ stream });
+}
+
+function keyPresent(name: 'ANTHROPIC_API_KEY' | 'OPENAI_API_KEY'): boolean {
+  const value = process.env[name];
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** Claude wins when both keys are set. The Pane has no model picker (PRD §5). */
+function resolveOracleProvider(): OracleProvider {
+  if (keyPresent('ANTHROPIC_API_KEY')) return 'anthropic';
+  if (keyPresent('OPENAI_API_KEY')) return 'openai';
+  throw new Error('no_oracle_key');
 }

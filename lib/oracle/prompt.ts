@@ -178,16 +178,28 @@ HANDS
 ];
 
 /**
+ * Which vendor actually answers. Chosen from env in the route (AGENTS.md #8) —
+ * this file never reads a key. Default at the call site is Anthropic.
+ */
+export type OracleProvider = 'anthropic' | 'openai';
+
+/**
  * Model routing. ARCHITECTURE §8.5: small model for small jobs.
- *   'look' / prefetch of a prop  -> haiku
- *   'speak' / 'choose' / elite   -> sonnet
+ *   'look' / prefetch of a prop  -> fast (haiku / gpt-5.4-mini)
+ *   'speak' / 'choose' / elite   -> frontier (sonnet / gpt-5.4)
  * One expression, no UI, no settings (PRD §5 forbids a model picker).
  */
-export function pickModel(kind: TurnKind, packet: ContextPacket): string {
+export function pickModel(
+  kind: TurnKind,
+  packet: ContextPacket,
+  provider: OracleProvider = 'anthropic',
+): string {
   const eliteNearby = packet.nearby.some(e => e.kind === 'elite');
-  if (kind === 'speak' || kind === 'choose' || eliteNearby) return SONNET_ID;
-  return HAIKU_ID;
+  const tier = kind === 'speak' || kind === 'choose' || eliteNearby ? 'frontier' : 'fast';
+  return MODEL_IDS[provider][tier];
 }
 
-const SONNET_ID = 'claude-sonnet-4-6';
-const HAIKU_ID = 'claude-haiku-4-5';
+const MODEL_IDS = {
+  anthropic: { frontier: 'claude-sonnet-4-6', fast: 'claude-haiku-4-5' },
+  openai: { frontier: 'gpt-5.4', fast: 'gpt-5.4-mini' },
+} as const;
