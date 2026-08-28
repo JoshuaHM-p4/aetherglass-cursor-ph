@@ -15,6 +15,10 @@
 // for movement anyway. No spatial index in lib/sim, no distance code duplicated between
 // the sim and the scene (`select.distanceTo` exists for the packet, and only for that).
 
+import Phaser from 'phaser';
+import { world } from '../../lib/sim/store';
+import { bus } from '../EventBus';
+
 export interface ProximitySpawnArgs {
   /** `sprite.name` is already the entity id — set at spawn, single source of ids. */
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -23,12 +27,50 @@ export interface ProximitySpawnArgs {
 
 export const RINGS = { reachTiles: 1, approachTiles: 3, tile: 16 } as const;
 
+type RingSprite = Phaser.Physics.Arcade.Sprite & {
+  entityId: string;
+  paneWorthy: boolean;
+  ring: 'reach' | 'approach';
+};
+
+/**
+ * Per scene, because Phaser reuses the Scene instance across restarts: a module-level
+ * group would hand the second run a bag of destroyed sensors.
+ */
+const sensorGroups = new WeakMap<Phaser.Scene, Phaser.Physics.Arcade.Group>();
+
+function sensors(scene: Phaser.Scene): Phaser.Physics.Arcade.Group {
+  let group = sensorGroups.get(scene);
+  if (!group) {
+    group = scene.physics.add.group();
+    sensorGroups.set(scene, group);
+  }
+  return group;
+}
+
 /** Called once per interactable at spawn time, from Overworld's entity pass. */
 export function attachProximityRings(
   scene: Phaser.Scene,
   args: ProximitySpawnArgs,
 ): void {
-  throw new Error('not implemented');
+  const group = sensors(scene);
+  const make = (ring: 'reach' | 'approach', tiles: number) => {
+    const radius = tiles * RINGS.tile;
+    const sensor = scene.physics.add.sprite(args.sprite.x, args.sprite.y, 'tex-floor') as RingSprite;
+    sensor.setVisible(false);
+    const body = sensor.body as Phaser.Physics.Arcade.Body;
+    body.setImmovable(true);
+    body.allowGravity = false;
+    body.setCircle(radius, args.sprite.width / 2 - radius, args.sprite.height / 2 - radius);
+    sensor.entityId = args.sprite.name;
+    sensor.paneWorthy = args.paneWorthy;
+    sensor.ring = ring;
+    group.add(sensor);
+    args.sprite.on('destroy', () => sensor.destroy());
+    return sensor;
+  };
+  make('reach', RINGS.reachTiles);
+  make('approach', RINGS.approachTiles);
 }
 
 /**
@@ -39,9 +81,76 @@ export function attachProximityRings(
  * from the entity table.
  */
 export function installProximitySystem(scene: Phaser.Scene): () => void {
-  throw new Error('not implemented');
-  // TODO  on approach-enter, if paneWorthy: bus.emit('world:proximity_enter', ...)
-  //       on approach-exit:                 bus.emit('world:proximity_exit', ...)
-  //       on reach-enter/exit:              bus.emit('world:interact'/'world:interact_clear')
-  //       Enter key while a reach target exists -> bus.emit('world:interact', { entityId })
+  const s = scene as Phaser.Scene & { player: Phaser.Physics.Arcade.Sprite };
+  const group = sensors(scene);
+  const frameReach = new Set<string>();
+  const frameApproach = new Set<string>();
+  const heldReach = new Set<string>();
+  const heldApproach = new Set<string>();
+
+  const overlap = scene.physics.add.overlap(s.player, group, (_p, obj) => {
+    const ring = obj as RingSprite;
+    if (ring.ring === 'reach') frameReach.add(ring.entityId);
+    else if (ring.ring === 'approach') frameApproach.add(ring.entityId);
+  });
+
+  const flush = () => {
+    for (const id of frameApproach) {
+      if (!heldApproach.has(id)) {
+        heldApproach.add(id);
+        const entity = world().entities[id];
+        bus.emit('world:proximity_enter', {
+          entityId: id,
+          paneWorthy: entity?.paneWorthy ?? false,
+        });
+      }
+    }
+    for (const id of [...heldApproach]) {
+      if (!frameApproach.has(id)) {
+        heldApproach.delete(id);
+        bus.emit('world:proximity_exit', { entityId: id });
+      }
+    }
+    for (const id of frameReach) heldReach.add(id);
+    for (const id of [...heldReach]) {
+      if (!frameReach.has(id)) {
+        heldReach.delete(id);
+        if (heldReach.size === 0) bus.emit('world:interact_clear', {});
+      }
+    }
+    frameReach.clear();
+    frameApproach.clear();
+  };
+  scene.events.on('postupdate', flush);
+
+  const enter = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+  const onEnter = () => {
+    const facing = world().player.facing;
+    const player = s.player;
+    let best: { id: string; score: number } | null = null;
+    for (const id of heldReach) {
+      const entity = world().entities[id];
+      if (!entity) continue;
+      const dx = entity.tx * RINGS.tile + 8 - player.x;
+      const dy = entity.ty * RINGS.tile + 8 - player.y;
+      const aligned =
+        (facing === 'right' && dx >= 0) ||
+        (facing === 'left' && dx <= 0) ||
+        (facing === 'down' && dy >= 0) ||
+        (facing === 'up' && dy <= 0);
+      const score = Math.abs(dx) + Math.abs(dy) - (aligned ? 8 : 0);
+      if (!best || score < best.score) best = { id, score };
+    }
+    if (best) bus.emit('world:interact', { entityId: best.id });
+  };
+  enter.on('down', onEnter);
+
+  return () => {
+    enter.off('down', onEnter);
+    scene.events.off('postupdate', flush);
+    scene.physics.world.removeCollider(overlap);
+    sensorGroups.delete(scene);
+    heldReach.clear();
+    heldApproach.clear();
+  };
 }

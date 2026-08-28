@@ -1,0 +1,85 @@
+{
+  "jsonVersion": "1.5.3",
+  "levels": [
+    {
+      "identifier": "Overworld",
+      "pxWid": 480,
+      "pxHei": 270,
+      "layerInstances": [
+        {
+          "__identifier": "Entities",
+          "entityInstances": [
+            {
+              "iid": "chest_lockbox",
+              "px": [96, 80],
+              "fieldInstances": [
+                { "__identifier": "kind", "__value": "container" },
+                { "__identifier": "name", "__value": "rusted lockbox" },
+                { "__identifier": "tags", "__value": ["sealed", "iron"] },
+                { "__identifier": "locked", "__value": true },
+                { "__identifier": "contents", "__value": ["crowbar", "ore_iron"] },
+                { "__identifier": "paneWorthy", "__value": true },
+                { "__identifier": "seed", "__value": "a cold draft comes from the seam" }
+              ]
+            },
+            {
+              "iid": "chest_plain",
+              "px": [48, 80],
+              "fieldInstances": [
+                { "__identifier": "kind", "__value": "container" },
+                { "__identifier": "name", "__value": "splintered crate" },
+                { "__identifier": "tags", "__value": ["wood"] },
+                { "__identifier": "locked", "__value": false },
+                { "__identifier": "contents", "__value": ["torch_stub"] },
+                { "__identifier": "paneWorthy", "__value": false }
+              ]
+            },
+            {
+              "iid": "slime_01",
+              "px": [80, 112],
+              "fieldInstances": [
+                { "__identifier": "kind", "__value": "enemy" },
+                { "__identifier": "name", "__value": "grey slime" },
+                { "__identifier": "tags", "__value": ["foul"] },
+                { "__identifier": "paneWorthy", "__value": false }
+              ]
+            },
+            {
+              "iid": "door_barred",
+              "px": [80, 32],
+              "fieldInstances": [
+                { "__identifier": "kind", "__value": "door" },
+                { "__identifier": "name", "__value": "barred door" },
+                { "__identifier": "tags", "__value": ["barred", "wood"] },
+                { "__identifier": "locked", "__value": true }
+              ]
+            },
+            {
+              "iid": "shrine_dim",
+              "px": [144, 48],
+              "fieldInstances": [
+                { "__identifier": "kind", "__value": "shrine" },
+                { "__identifier": "name", "__value": "dim shrine" },
+                { "__identifier": "tags", "__value": ["runed", "arcane"] },
+                { "__identifier": "contents", "__value": ["pane_shard"] },
+                { "__identifier": "paneWorthy", "__value": true },
+                { "__identifier": "seed", "__value": "the glass hums here" }
+              ]
+            },
+            {
+              "iid": "troll_wounded",
+              "px": [240, 160],
+              "fieldInstances": [
+                { "__identifier": "kind", "__value": "elite" },
+                { "__identifier": "name", "__value": "wounded troll" },
+                { "__identifier": "tags", "__value": ["wounded", "hungry"] },
+                { "__identifier": "paneWorthy", "__value": true },
+                { "__identifier": "seed", "__value": "it watches the mushroom, not you" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -26,5 +26,7 @@ export class Boot extends Phaser.Scene {
         color: '#c9a86a',
       })
       .setOrigin(0.5);
+
+    this.scene.start('Preload');
   }
 }
