@@ -10,8 +10,9 @@
 
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useChat } from '@ai-sdk/react';
+import { bus } from '../../game/EventBus';
 import { emptyJournal } from '../oracle/journal';
 import { world } from '../sim/store';
 import type { OfferedChoice, TurnId } from '../oracle/protocol';
@@ -129,6 +130,24 @@ export function useOracleTurn(): OracleTurnApi {
   const { messages: uiMessages, sendMessage, status: chatStatus, regenerate } = useChat({
     transport,
   });
+  const sendRef = useRef(sendMessage);
+  sendRef.current = sendMessage;
+  const chatStatusRef = useRef(chatStatus);
+  chatStatusRef.current = chatStatus;
+
+  const lookAt = (entityId: string) => {
+    if (chatStatusRef.current === 'submitted' || chatStatusRef.current === 'streaming') return;
+    const entity = world().entities[entityId];
+    if (!entity) return;
+    void sendRef.current(
+      { text: `I look at the ${entity.name}.` },
+      { body: { kind: 'look' } },
+    );
+  };
+  const lookRef = useRef(lookAt);
+  lookRef.current = lookAt;
+
+  useEffect(() => bus.on('world:interact', ({ entityId }) => lookRef.current(entityId)), []);
 
   const messages: PaneMessage[] = [];
   for (const message of uiMessages) {
@@ -160,8 +179,8 @@ export function useOracleTurn(): OracleTurnApi {
     choose(_choiceId: string) {
       throw new Error('not implemented');
     },
-    look(_entityId: string) {
-      throw new Error('not implemented');
+    look(entityId: string) {
+      lookAt(entityId);
     },
     retry() {
       void regenerate();

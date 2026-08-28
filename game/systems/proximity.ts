@@ -17,6 +17,7 @@
 
 import Phaser from 'phaser';
 import type { Facing } from '../../lib/sim/types';
+import { isAdjacent } from '../../lib/sim/select';
 import { world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
 
@@ -59,14 +60,16 @@ export function attachProximityRings(
     const radius = tiles * RINGS.tile;
     const sensor = scene.physics.add.sprite(args.sprite.x, args.sprite.y, 'tex-floor') as RingSprite;
     sensor.setVisible(false);
+    group.add(sensor);
     const body = sensor.body as Phaser.Physics.Arcade.Body;
     body.setImmovable(true);
     body.allowGravity = false;
+    body.checkCollision.none = true;
+    // After group.add: Arcade resets the body to the frame. Recentre the circle then.
     body.setCircle(radius, args.sprite.width / 2 - radius, args.sprite.height / 2 - radius);
     sensor.entityId = args.sprite.name;
     sensor.paneWorthy = args.paneWorthy;
     sensor.ring = ring;
-    group.add(sensor);
     args.sprite.on('destroy', () => sensor.destroy());
     return sensor;
   };
@@ -126,23 +129,30 @@ export function installProximitySystem(scene: Phaser.Scene): () => void {
 
   const enter = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
   const onEnter = () => {
-    // The scene's facing, not the sim's: the sim only hears about a turn on a tile
-    // crossing, and pressing Enter against a chest never crosses one.
+    const typing =
+      typeof document !== 'undefined' &&
+      (document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement);
+    if (typing) return;
+
+    // Tile adjacency is the sim's definition of reach (`isAdjacent`). The overlap
+    // set is a 60fps hint; Enter is a moment, so we ask the store. Solid chests
+    // keep the player tangent to a 1-tile circle, which arcade does not count as
+    // overlap, so `heldReach` is often empty when you are standing right there.
     const facing = s.facing;
-    const player = s.player;
+    const state = world();
     let best: { id: string; score: number } | null = null;
-    for (const id of heldReach) {
-      const entity = world().entities[id];
-      if (!entity) continue;
-      const dx = entity.tx * RINGS.tile + 8 - player.x;
-      const dy = entity.ty * RINGS.tile + 8 - player.y;
+    for (const entity of Object.values(state.entities)) {
+      if (!isAdjacent(state, entity.id)) continue;
+      const dx = entity.tx - state.player.tx;
+      const dy = entity.ty - state.player.ty;
       const aligned =
         (facing === 'right' && dx >= 0) ||
         (facing === 'left' && dx <= 0) ||
         (facing === 'down' && dy >= 0) ||
         (facing === 'up' && dy <= 0);
-      const score = Math.abs(dx) + Math.abs(dy) - (aligned ? 8 : 0);
-      if (!best || score < best.score) best = { id, score };
+      const score = Math.abs(dx) + Math.abs(dy) - (aligned ? 1 : 0);
+      if (!best || score < best.score) best = { id: entity.id, score };
     }
     if (best) bus.emit('world:interact', { entityId: best.id });
   };

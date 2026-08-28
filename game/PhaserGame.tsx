@@ -16,7 +16,14 @@ export default function PhaserGame() {
     if (gameRef.current) return;
     const teardownAdapter = installWorldAdapter();
     gameRef.current = StartGame('game-container');
+    const root = document.getElementById('game-container');
+    const focusWorld = () => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
+    };
+    root?.addEventListener('pointerdown', focusWorld);
     return () => {
+      root?.removeEventListener('pointerdown', focusWorld);
       teardownAdapter();
       gameRef.current?.destroy(true);
       gameRef.current = null;
