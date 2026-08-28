@@ -9,7 +9,7 @@
 
 'use client';
 
-import type { ChoiceRack, PaneMessage, PaneStatus } from '../../lib/client/useOracleTurn';
+import { useOracleTurn, type ChoiceRack, type PaneMessage, type PaneStatus } from '../../lib/client/useOracleTurn';
 
 /**
  * No props, on purpose. The Pane reads the store and the hook; a prop would be a second
@@ -27,7 +27,42 @@ import type { ChoiceRack, PaneMessage, PaneStatus } from '../../lib/client/useOr
  *   </Glass>
  */
 export default function Pane(): JSX.Element {
-  throw new Error('not implemented');
+  const { messages, status, ask } = useOracleTurn();
+  const thinking = status === 'thinking';
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+      <ol className="flex-1 space-y-3 overflow-y-auto">
+        {messages.map((m) => (
+          <li key={m.id} className="text-sm">
+            <span className="font-medium">{m.role}</span>
+            <p className="whitespace-pre-wrap">{m.text}</p>
+          </li>
+        ))}
+      </ol>
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const text = String(new FormData(event.currentTarget).get('ask') ?? '').trim();
+          if (text === '') return;
+          ask(text);
+          event.currentTarget.reset();
+        }}
+      >
+        <input
+          name="ask"
+          type="text"
+          disabled={thinking}
+          className="min-w-0 flex-1 border px-2 py-1 disabled:opacity-50"
+          placeholder="speak"
+        />
+        <button type="submit" disabled={thinking} className="border px-3 py-1 disabled:opacity-50">
+          ask
+        </button>
+      </form>
+    </div>
+  );
 }
 
 /**

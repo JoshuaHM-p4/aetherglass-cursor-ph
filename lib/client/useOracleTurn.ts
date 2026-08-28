@@ -8,7 +8,16 @@
 // `OracleRequest`, a `data-verdict`, a `ContextPacket`, or a `GameState`. If a wire type
 // ever appears in this file's exports, the abstraction has failed.
 
+'use client';
+
+import { useMemo, useRef } from 'react';
+import { useChat } from '@ai-sdk/react';
+import type { ChatTransport, UIMessage } from 'ai';
+import { emptyJournal } from '../oracle/journal';
+import { world } from '../sim/store';
 import type { OfferedChoice, TurnId } from '../oracle/protocol';
+import type { PrefetchController } from './prefetch';
+import { createOracleTransport } from './transport';
 
 /** What the glass is doing. Drives the breathing blur and the input's disabled state. */
 export type PaneStatus = 'asleep' | 'ready' | 'thinking' | 'streaming' | 'error';
@@ -71,6 +80,27 @@ export interface OracleTurnApi {
   retry(): void;
 }
 
+const PREFETCH_UNARMED: PrefetchController = {
+  arm() {},
+  disarm() {},
+  claim() {
+    return undefined;
+  },
+  stats() {
+    return { hits: 0, misses: 0, wasted: 0 };
+  },
+};
+
+function textOf(message: { parts: ReadonlyArray<{ type: string; text?: string }> }): string {
+  let text = '';
+  for (const part of message.parts) {
+    if (part.type === 'text' && part.text !== undefined) {
+      text += part.text;
+    }
+  }
+  return text;
+}
+
 /**
  * Mount once, inside <Pane/>. Wires:
  *   useChat({ transport: createOracleTransport(...), onData })
@@ -85,5 +115,57 @@ export interface OracleTurnApi {
  * thing that ever writes GameState from this file is `applyVerdict`.
  */
 export function useOracleTurn(): OracleTurnApi {
-  throw new Error('not implemented');
+  const journalRef = useRef(emptyJournal());
+  const transport = useMemo(
+    () =>
+      createOracleTransport({
+        prefetch: PREFETCH_UNARMED,
+        snapshot: () => world(),
+        journal: () => [...journalRef.current.entries],
+        nextTurnId: () => crypto.randomUUID(),
+      }),
+    [],
+  );
+
+  const { messages: uiMessages, sendMessage, status: chatStatus, regenerate } = useChat({
+    transport: transport as ChatTransport<UIMessage>,
+  });
+
+  const messages: PaneMessage[] = [];
+  for (const message of uiMessages) {
+    if (message.role !== 'user' && message.role !== 'assistant') continue;
+    messages.push({
+      id: message.id,
+      role: message.role === 'user' ? 'player' : 'pane',
+      text: textOf(message),
+      refusals: [],
+    });
+  }
+
+  let status: PaneStatus;
+  if (chatStatus === 'submitted') status = 'thinking';
+  else if (chatStatus === 'streaming') status = 'streaming';
+  else if (chatStatus === 'error') status = 'error';
+  else if (messages.length === 0) status = 'asleep';
+  else status = 'ready';
+
+  return {
+    messages,
+    status,
+    rack: null,
+    ask(text: string) {
+      const trimmed = text.trim();
+      if (trimmed === '') return;
+      void sendMessage({ text: trimmed });
+    },
+    choose(_choiceId: string) {
+      throw new Error('not implemented');
+    },
+    look(_entityId: string) {
+      throw new Error('not implemented');
+    },
+    retry() {
+      void regenerate();
+    },
+  };
 }

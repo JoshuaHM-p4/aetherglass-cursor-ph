@@ -49,14 +49,35 @@ export interface OracleTransportDeps {
 export function createOracleTransport(
   deps: OracleTransportDeps,
 ): ChatTransportLike<unknown> {
-  throw new Error('not implemented');
-  // TODO  sendMessages({ messages, body }):
-  //   const packet = ...;                       // for digest only
-  //   const hit = deps.prefetch.claim(digestPacket(packet));
-  //   if (hit && body.kind !== 'choose') return hit.replay();   // never reuse a buffer
-  //                                                             // for a committed choice
-  //   return fetch('/api/oracle', { body: { messages, snapshot: deps.snapshot(),
-  //     journal: deps.journal(), turnId: deps.nextTurnId(), ...body } }).then(r => r.body)
+  return {
+    async sendMessages({ messages, abortSignal, body }) {
+      // TODO H9: digestPacket for claim(); never replay a buffer when kind === 'choose'
+      const { kind: bodyKind, ...rest } = body ?? {};
+      const response = await fetch(ORACLE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: abortSignal,
+        body: JSON.stringify({
+          messages,
+          snapshot: deps.snapshot(),
+          journal: deps.journal(),
+          turnId: deps.nextTurnId(),
+          kind: bodyKind ?? DEFAULT_TURN_KIND,
+          ...rest,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`oracle_http_${response.status}`);
+      }
+      if (response.body === null) {
+        throw new Error('empty_oracle_stream');
+      }
+      return response.body;
+    },
+    async reconnectToStream() {
+      return null;
+    },
+  };
 }
 
 export const ORACLE_ENDPOINT = '/api/oracle';
