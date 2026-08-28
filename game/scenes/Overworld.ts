@@ -21,7 +21,7 @@ import type { Entity, Facing, GameState } from '../../lib/sim/types';
 import { gameStore, world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
 import { GAME_HEIGHT, GAME_WIDTH, TILE } from '../main';
-import { installCombatSystem } from '../systems/combat';
+import { DEAD_TINT, installCombatSystem } from '../systems/combat';
 import { installFocusSystem } from '../systems/focus';
 import { attachProximityRings, installProximitySystem } from '../systems/proximity';
 
@@ -37,11 +37,67 @@ const MAP_W = 30;
 const MAP_H = 17;
 const SPEED = 80;
 
-function textureFor(entity: Entity): string {
-  if (entity.kind === 'container') return 'tex-chest';
+/**
+ * The one place an entity's `state` becomes pixels. Called on spawn as well as on the
+ * diff, so a hydrate that lands a dead slime does not draw it alive.
+ */
+function applyEntityState(
+  sprite: Phaser.Physics.Arcade.Sprite,
+  entity: Entity,
+): void {
+  if (entity.state === 'dead') {
+    sprite.setTint(DEAD_TINT).setAlpha(0.5);
+    if (sprite.body) sprite.body.enable = false;
+    return;
+  }
+  sprite.clearTint();
+  if (entity.kind === 'container') {
+    const open = entity.state === 'open';
+    if (entity.tags.includes('wood') && sprite.scene.textures.exists('tex-crate')) {
+      sprite.setTexture('tex-crate');
+    } else {
+      sprite.setTexture(open && sprite.scene.textures.exists('tex-chest-open') ? 'tex-chest-open' : 'tex-chest');
+    }
+    return;
+  }
+  if (entity.kind === 'door') {
+    const open = entity.state === 'open' || entity.state === 'unlocked';
+    sprite.setTexture(
+      open && sprite.scene.textures.exists('tex-door-open') ? 'tex-door-open' : 'tex-door',
+    );
+  }
+}
+
+function textureFor(entity: Entity, textures: Phaser.Textures.TextureManager): string {
+  if (entity.kind === 'container') {
+    if (entity.tags.includes('wood') && textures.exists('tex-crate')) return 'tex-crate';
+    return 'tex-chest';
+  }
   if (entity.kind === 'door') return 'tex-door';
   if (entity.kind === 'shrine') return 'tex-shrine';
   return 'tex-slime';
+}
+
+function floorTexture(tx: number, ty: number, scene: Phaser.Scene): string {
+  const h = (tx * 13 + ty * 29) % 11;
+  if (h === 0 && scene.textures.exists('tex-floor-a')) return 'tex-floor-a';
+  if (h === 1 && scene.textures.exists('tex-floor-b')) return 'tex-floor-b';
+  return 'tex-floor';
+}
+
+function wallTexture(tx: number, ty: number, scene: Phaser.Scene): string {
+  const n = ty === 0;
+  const s = ty === MAP_H - 1;
+  const w = tx === 0;
+  const e = tx === MAP_W - 1;
+  const pick = (key: string) => (scene.textures.exists(key) ? key : 'tex-wall');
+  if (n && w) return pick('tex-wall-nw');
+  if (n && e) return pick('tex-wall-ne');
+  if (n) return 'tex-wall';
+  if (s) return pick('tex-wall-s');
+  if (w) return pick('tex-wall-w');
+  if (e) return pick('tex-wall-e');
+  return 'tex-wall';
 }
 
 export class Overworld extends Phaser.Scene implements OverworldRefs {
@@ -82,6 +138,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     }
 
     const start = world().player;
+    this.facing = start.facing;
     this.player = this.physics.add.sprite(start.tx * TILE + 8, start.ty * TILE + 8, 'tex-player');
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(10);
@@ -104,6 +161,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as typeof this.wasd;
 
+    this.plantTorches();
     this.spawnEntities();
     this.teardownCombat = installCombatSystem(this);
     this.teardownProximity = installProximitySystem(this);
@@ -117,6 +175,9 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
 
     this.unsubHydrate = bus.on('sim:hydrated', () => this.spawnEntities());
     this.prev = world();
+    // Phaser emits SHUTDOWN but never calls the method, and a restarted scene that
+    // subscribed twice moves the player two tiles per keypress.
+    this.events.once('shutdown', this.shutdown, this);
     bus.emit('world:ready', { sceneKey: 'Overworld' });
   }
 
@@ -143,6 +204,15 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       facing = facing ?? 'down';
     }
     this.player.setVelocity(vx, vy);
+    if (facing === 'left') this.player.setFlipX(true);
+    if (facing === 'right') this.player.setFlipX(false);
+    const moving = vx !== 0 || vy !== 0;
+    if (moving && this.anims.exists('player-walk')) {
+      if (this.player.anims.currentAnim?.key !== 'player-walk') this.player.play('player-walk');
+    } else if (this.player.anims.isPlaying) {
+      this.player.anims.stop();
+      this.player.setTexture('tex-player');
+    }
     if (facing) {
       this.facing = facing;
       const tx = Math.floor(this.player.x / TILE);
@@ -161,6 +231,12 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownCombat?.();
     this.teardownProximity?.();
     this.teardownFocus?.();
+    this.unsubStore = null;
+    this.unsubHydrate = null;
+    this.teardownCombat = null;
+    this.teardownProximity = null;
+    this.teardownFocus = null;
+    this.prev = null;
   }
 
   spawnEntities(): void {
@@ -171,7 +247,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       const sprite = this.physics.add.sprite(
         entity.tx * TILE + 8,
         entity.ty * TILE + 8,
-        textureFor(entity),
+        textureFor(entity, this.textures),
       );
       sprite.name = entity.id;
       const body = sprite.body as Phaser.Physics.Arcade.Body;
@@ -179,6 +255,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       body.allowGravity = false;
       this.physics.add.collider(this.player, sprite);
       this.entityLayer.add(sprite);
+      applyEntityState(sprite, entity);
       attachProximityRings(this, { sprite, paneWorthy: entity.paneWorthy ?? false });
     }
   }
@@ -192,23 +269,40 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       if (prev.entities[id]?.state === entity.state) continue;
       const sprite = this.entityLayer.getByName(id) as Phaser.Physics.Arcade.Sprite | null;
       if (!sprite) continue;
-      if (entity.state === 'open') sprite.setTint(0x886644);
-      if (entity.state === 'dead') {
-        sprite.setTint(0x555555);
-        if (sprite.body) sprite.body.enable = false;
-      }
+      applyEntityState(sprite, entity);
     }
   }
 
   private drawFloor(): void {
     for (let ty = 0; ty < MAP_H; ty++) {
       for (let tx = 0; tx < MAP_W; tx++) {
-        this.add.image(tx * TILE + 8, ty * TILE + 8, 'tex-floor');
+        this.add.image(tx * TILE + 8, ty * TILE + 8, floorTexture(tx, ty, this));
       }
     }
   }
 
   private placeWall(tx: number, ty: number): void {
-    this.walls.create(tx * TILE + 8, ty * TILE + 8, 'tex-wall');
+    this.walls.create(tx * TILE + 8, ty * TILE + 8, wallTexture(tx, ty, this));
+  }
+
+  private plantTorches(): void {
+    if (!this.textures.exists('tex-torch')) return;
+    const xs = [3, 8, 12, 18, 24];
+    for (const tx of xs) {
+      const x = tx * TILE + 8;
+      const y = 8;
+      const torch = this.add.image(x, y, 'tex-torch').setDepth(6);
+      const glow = this.textures.exists('tex-glow')
+        ? this.add.image(x, TILE + 4, 'tex-glow').setDepth(5).setAlpha(0.4)
+        : null;
+      this.tweens.add({
+        targets: glow ? [torch, glow] : torch,
+        alpha: { from: 0.55, to: 1 },
+        duration: 140 + ((tx * 17) % 90),
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
   }
 }

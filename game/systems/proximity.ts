@@ -16,6 +16,7 @@
 // the sim and the scene (`select.distanceTo` exists for the packet, and only for that).
 
 import Phaser from 'phaser';
+import type { Facing } from '../../lib/sim/types';
 import { world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
 
@@ -81,7 +82,7 @@ export function attachProximityRings(
  * from the entity table.
  */
 export function installProximitySystem(scene: Phaser.Scene): () => void {
-  const s = scene as Phaser.Scene & { player: Phaser.Physics.Arcade.Sprite };
+  const s = scene as Phaser.Scene & { player: Phaser.Physics.Arcade.Sprite; facing: Facing };
   const group = sensors(scene);
   const frameReach = new Set<string>();
   const frameApproach = new Set<string>();
@@ -125,7 +126,9 @@ export function installProximitySystem(scene: Phaser.Scene): () => void {
 
   const enter = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
   const onEnter = () => {
-    const facing = world().player.facing;
+    // The scene's facing, not the sim's: the sim only hears about a turn on a tile
+    // crossing, and pressing Enter against a chest never crosses one.
+    const facing = s.facing;
     const player = s.player;
     let best: { id: string; score: number } | null = null;
     for (const id of heldReach) {

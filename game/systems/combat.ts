@@ -21,6 +21,14 @@ export { swingHitbox } from './hitbox';
 
 const TILE = 16;
 
+/**
+ * Enemy bodies are immovable and the player collides with them, so the player never
+ * overlaps a slime — arcade separation parks the two centres exactly one tile apart.
+ * A strict `< TILE` test would therefore never fire; the cushion absorbs the pixel of
+ * float slop separation leaves behind.
+ */
+const CONTACT_RANGE = TILE + 1;
+
 export const COMBAT = {
   swingMs: 180,
   /** Post-swing lockout, so mashing Space is not a DPS strategy. */
@@ -99,7 +107,9 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
       const entity = world().entities[sprite.name];
       if (!entity || (entity.kind !== 'enemy' && entity.kind !== 'elite')) continue;
       if (entity.state === 'dead') continue;
-      if (Math.abs(sprite.x - s.player.x) < TILE && Math.abs(sprite.y - s.player.y) < TILE) {
+      const dx = Math.abs(sprite.x - s.player.x);
+      const dy = Math.abs(sprite.y - s.player.y);
+      if (dx <= CONTACT_RANGE && dy <= CONTACT_RANGE) {
         iframeUntil = now + COMBAT.iFramesMs;
         bus.emit('world:player_hurt', { amount: 1, source: entity.name });
         return;

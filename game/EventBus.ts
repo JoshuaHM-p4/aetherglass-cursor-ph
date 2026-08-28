@@ -31,6 +31,7 @@
 // ===========================================================================
 
 import { findItem } from '../lib/sim/select';
+import { gameStore } from '../lib/sim/store';
 import type { Facing, RejectReason, SimEvent } from '../lib/sim/types';
 import type { FocusData } from '../lib/oracle/protocol';
 
@@ -147,7 +148,6 @@ export const bus: TypedBus = createBus();
  * reducer.ts decides.
  */
 export function installWorldAdapter(): () => void {
-  const { gameStore } = require('../lib/sim/store') as typeof import('../lib/sim/store');
   const offTile = bus.on('world:tile_entered', ({ tx, ty, facing }) => {
     gameStore.getState().dispatch({ type: 'MOVE', facing, tx, ty }, 'keyboard');
   });
@@ -190,7 +190,6 @@ const BARE_HANDS_DAMAGE = 1;
  * clamps it to LIMITS.damagePerEffect either way, so a bad weapon stat cannot one-shot.
  */
 function swingDamage(withItemId: string | null): number {
-  const { gameStore } = require('../lib/sim/store') as typeof import('../lib/sim/store');
   if (!withItemId) return BARE_HANDS_DAMAGE;
   return findItem(gameStore.getState().state, withItemId)?.stats?.damage ?? BARE_HANDS_DAMAGE;
 }
