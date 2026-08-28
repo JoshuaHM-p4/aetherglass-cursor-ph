@@ -9,6 +9,7 @@
 
 'use client';
 
+import type { JSX } from 'react';
 import { useOracleTurn, type ChoiceRack, type PaneMessage, type PaneStatus } from '../../lib/client/useOracleTurn';
 
 /**

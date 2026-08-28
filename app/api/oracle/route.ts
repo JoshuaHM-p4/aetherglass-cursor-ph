@@ -46,23 +46,16 @@ export async function POST(req: Request) {
   const stream = createUIMessageStream({
     execute: async ({ writer }) => {
       const turn = createTurnSim({ snapshot, journal, turnId, kind, writer });
-      const { text: system, stablePrefixLength } = buildSystemPrompt({
+      const { text: system } = buildSystemPrompt({
         packet: turn.packet,
         journal,
         kind,
       });
-      const stablePrefix = system.slice(0, stablePrefixLength);
-      const volatileSuffix = system.slice(stablePrefixLength).replace(/^\n+/, '');
 
       const result = streamText({
         model: anthropic(pickModel(kind, turn.packet)),
-        system: stablePrefix,
-        messages: [
-          ...(volatileSuffix.length > 0
-            ? [{ role: 'system' as const, content: volatileSuffix }]
-            : []),
-          ...(await convertToModelMessages(messages as UIMessage[])),
-        ],
+        system,
+        messages: await convertToModelMessages(messages as UIMessage[]),
         stopWhen: stepCountIs(4),
         providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
       });

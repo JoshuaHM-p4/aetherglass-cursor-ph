@@ -12,7 +12,6 @@
 
 import { useMemo, useRef } from 'react';
 import { useChat } from '@ai-sdk/react';
-import type { ChatTransport, UIMessage } from 'ai';
 import { emptyJournal } from '../oracle/journal';
 import { world } from '../sim/store';
 import type { OfferedChoice, TurnId } from '../oracle/protocol';
@@ -128,7 +127,7 @@ export function useOracleTurn(): OracleTurnApi {
   );
 
   const { messages: uiMessages, sendMessage, status: chatStatus, regenerate } = useChat({
-    transport: transport as ChatTransport<UIMessage>,
+    transport,
   });
 
   const messages: PaneMessage[] = [];
