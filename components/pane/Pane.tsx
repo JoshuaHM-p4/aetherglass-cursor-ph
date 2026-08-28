@@ -6,7 +6,7 @@
 'use client';
 
 import { motion, useReducedMotion } from 'motion/react';
-import { useEffect, useRef, type JSX } from 'react';
+import { useEffect, useRef, type JSX, type KeyboardEvent } from 'react';
 import { paneParagraphs } from '../../lib/client/paneText';
 import {
   useOracleTurn,
@@ -15,6 +15,8 @@ import {
   type PaneStatus,
 } from '../../lib/client/useOracleTurn';
 import { bus } from '../../game/EventBus';
+import { setPaneTyping } from '../../game/inputCapture';
+import { requestSessionDismiss } from '../../lib/client/paneSessions';
 import { paneBoxBesidePlayer, readPlayerAnchor } from '../../game/playerAnchor';
 import { useGame } from '../useGame';
 import ChoiceRack from './ChoiceRack';
@@ -42,8 +44,28 @@ export default function Pane(): JSX.Element {
   }, [activeEntityId]);
 
   useEffect(() => {
+    if (!activeEntityId) {
+      setPaneTyping(false);
+      return;
+    }
+    if (status === 'thinking' || status === 'streaming') setPaneTyping(true);
+  }, [activeEntityId, status]);
+
+  useEffect(() => {
+    if (!activeEntityId) return;
+    const onEsc = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      requestSessionDismiss();
+    };
+    window.addEventListener('keydown', onEsc);
+    return () => window.removeEventListener('keydown', onEsc);
+  }, [activeEntityId]);
+
+  useEffect(() => {
     if (!activeEntityId) return;
     let raf = 0;
+    let grabbed = false;
     const tick = () => {
       const el = boxRef.current;
       if (el) {
@@ -56,6 +78,14 @@ export default function Pane(): JSX.Element {
         el.style.left = `${box.left}px`;
         el.style.top = `${box.top}px`;
         el.style.visibility = 'visible';
+        if (!grabbed) {
+          grabbed = true;
+          const input = el.querySelector('input');
+          if (input instanceof HTMLInputElement && !input.disabled) {
+            input.focus();
+            setPaneTyping(true);
+          }
+        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -241,6 +271,17 @@ function PaneInput({
 }) {
   const ref = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!disabled) {
+      ref.current?.focus();
+      setPaneTyping(true);
+    }
+  }, [disabled]);
+
+  const keepKeys = (event: KeyboardEvent<HTMLInputElement>) => {
+    event.stopPropagation();
+  };
+
   return (
     <form
       className="mt-3 border-t border-amber-400/20 pt-2"
@@ -259,6 +300,10 @@ function PaneInput({
         type="text"
         disabled={disabled}
         autoComplete="off"
+        onFocus={() => setPaneTyping(true)}
+        onBlur={() => setPaneTyping(false)}
+        onKeyDown={keepKeys}
+        onKeyUp={keepKeys}
         className="w-full bg-transparent font-serif text-[15px] text-amber-50/90 outline-none placeholder:text-amber-100/30 disabled:opacity-40"
         placeholder={placeholder}
       />

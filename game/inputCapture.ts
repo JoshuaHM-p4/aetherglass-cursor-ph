@@ -3,9 +3,15 @@
 
 let bagOpen = false;
 let hotbarSlot = 0;
+/** True while the glass is holding the keyboard (focused speak field or thinking). */
+let paneTyping = false;
 
 export function setBagOpen(open: boolean): void {
   bagOpen = open;
+}
+
+export function setPaneTyping(on: boolean): void {
+  paneTyping = on;
 }
 
 export function isBagOpen(): boolean {
@@ -30,7 +36,7 @@ export function cycleHotbar(dir: 1 | -1): number {
  * the Pane, clicking a choice, or looking at the bag.
  */
 export function isWorldInputBlocked(): boolean {
-  if (bagOpen) return true;
+  if (bagOpen || paneTyping) return true;
   if (typeof document === 'undefined') return false;
   const el = document.activeElement;
   if (!(el instanceof HTMLElement)) return false;

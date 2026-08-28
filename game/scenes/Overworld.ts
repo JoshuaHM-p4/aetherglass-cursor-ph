@@ -163,8 +163,16 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.spotlight = this.add.image(0, 0, 'tex-spot').setVisible(false).setDepth(21);
     this.leaderLine = this.add.graphics().setDepth(22);
 
-    this.cursors = this.input.keyboard!.createCursorKeys();
-    this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as typeof this.wasd;
+    this.cursors = this.input.keyboard!.addKeys(
+      {
+        up: Phaser.Input.Keyboard.KeyCodes.UP,
+        down: Phaser.Input.Keyboard.KeyCodes.DOWN,
+        left: Phaser.Input.Keyboard.KeyCodes.LEFT,
+        right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
+      },
+      false,
+    ) as Phaser.Types.Input.Keyboard.CursorKeys;
+    this.wasd = this.input.keyboard!.addKeys('W,A,S,D', false) as typeof this.wasd;
 
     this.plantTorches();
     this.spawnEntities();

@@ -20,6 +20,7 @@ import type { Facing } from '../../lib/sim/types';
 import { isAdjacent } from '../../lib/sim/select';
 import { world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
+import { isWorldInputBlocked } from '../inputCapture';
 
 export interface ProximitySpawnArgs {
   /** `sprite.name` is already the entity id — set at spawn, single source of ids. */
@@ -127,13 +128,9 @@ export function installProximitySystem(scene: Phaser.Scene): () => void {
   };
   scene.events.on('postupdate', flush);
 
-  const enter = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+  const enter = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER, false);
   const onEnter = () => {
-    const typing =
-      typeof document !== 'undefined' &&
-      (document.activeElement instanceof HTMLInputElement ||
-        document.activeElement instanceof HTMLTextAreaElement);
-    if (typing) return;
+    if (isWorldInputBlocked()) return;
 
     // Tile adjacency is the sim's definition of reach (`isAdjacent`). The overlap
     // set is a 60fps hint; Enter is a moment, so we ask the store. Solid chests

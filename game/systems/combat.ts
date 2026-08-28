@@ -69,7 +69,7 @@ function equippedWeapon(): { itemId: string | null; damage: number; reach: numbe
  */
 export function installCombatSystem(scene: Phaser.Scene): () => void {
   const s = scene as CombatScene;
-  const space = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+  const space = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE, false);
   let cooldownUntil = 0;
   let iframeUntil = 0;
 
