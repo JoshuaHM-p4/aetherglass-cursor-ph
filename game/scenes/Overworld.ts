@@ -20,10 +20,14 @@ import Phaser from 'phaser';
 import type { Entity, Facing, GameState } from '../../lib/sim/types';
 import { gameStore, world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
-import { GAME_HEIGHT, GAME_WIDTH, TILE } from '../main';
+import { CAMERA_ZOOM, TILE } from '../main';
+import { isWorldInputBlocked } from '../inputCapture';
+import { requestSessionDismiss } from '../../lib/client/paneSessions';
+import { setPlayerAnchor, worldToOverlay } from '../playerAnchor';
 import { DEAD_TINT, installCombatSystem } from '../systems/combat';
 import { installFocusSystem } from '../systems/focus';
 import { attachProximityRings, installProximitySystem } from '../systems/proximity';
+import { installSessionMarks } from '../systems/sessionMark';
 
 export interface OverworldRefs {
   entityLayer: Phaser.GameObjects.Container;
@@ -111,7 +115,6 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
-  private hpText!: Phaser.GameObjects.Text;
   private lastTx = -1;
   private lastTy = -1;
   private prev: GameState | null = null;
@@ -120,6 +123,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   private teardownCombat: (() => void) | null = null;
   private teardownProximity: (() => void) | null = null;
   private teardownFocus: (() => void) | null = null;
+  private teardownMarks: (() => void) | null = null;
 
   constructor() {
     super('Overworld');
@@ -144,19 +148,20 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.player.setDepth(10);
     this.physics.add.collider(this.player, this.walls);
 
+    const worldW = MAP_W * TILE;
+    const worldH = MAP_H * TILE;
+    this.physics.world.setBounds(0, 0, worldW, worldH);
+    this.cameras.main.setZoom(CAMERA_ZOOM);
+    this.cameras.main.setRoundPixels(true);
+    this.cameras.main.startFollow(this.player, true, 1, 1);
+
     this.entityLayer = this.add.container(0, 0);
     this.dimLayer = this.add
-      .rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0)
+      .rectangle(0, 0, worldW, worldH, 0x000000, 0)
       .setOrigin(0, 0)
-      .setDepth(20)
-      .setScrollFactor(0);
+      .setDepth(20);
     this.spotlight = this.add.image(0, 0, 'tex-spot').setVisible(false).setDepth(21);
     this.leaderLine = this.add.graphics().setDepth(22);
-
-    this.hpText = this.add
-      .text(4, 4, '', { fontFamily: 'monospace', fontSize: '10px', color: '#c9a86a' })
-      .setDepth(30)
-      .setScrollFactor(0);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as typeof this.wasd;
@@ -166,12 +171,11 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownCombat = installCombatSystem(this);
     this.teardownProximity = installProximitySystem(this);
     this.teardownFocus = installFocusSystem(this);
+    this.teardownMarks = installSessionMarks(this);
 
-    this.unsubStore = gameStore.subscribe((s) => {
+    this.unsubStore = gameStore.subscribe(() => {
       this.syncFromStore();
-      this.hpText.setText(`HP ${s.state.player.hp}/${s.state.player.hpMax}`);
     });
-    this.hpText.setText(`HP ${world().player.hp}/${world().player.hpMax}`);
 
     this.unsubHydrate = bus.on('sim:hydrated', () => this.spawnEntities());
     this.prev = world();
@@ -182,6 +186,11 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   }
 
   update(): void {
+    this.syncAnchor();
+    if (isWorldInputBlocked()) {
+      this.player.setVelocity(0, 0);
+      return;
+    }
     const left = this.cursors.left.isDown || this.wasd.A.isDown;
     const right = this.cursors.right.isDown || this.wasd.D.isDown;
     const up = this.cursors.up.isDown || this.wasd.W.isDown;
@@ -207,6 +216,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     if (facing === 'left') this.player.setFlipX(true);
     if (facing === 'right') this.player.setFlipX(false);
     const moving = vx !== 0 || vy !== 0;
+    if (moving) requestSessionDismiss();
     if (moving && this.anims.exists('player-walk')) {
       if (this.player.anims.currentAnim?.key !== 'player-walk') this.player.play('player-walk');
     } else if (this.player.anims.isPlaying) {
@@ -231,11 +241,13 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownCombat?.();
     this.teardownProximity?.();
     this.teardownFocus?.();
+    this.teardownMarks?.();
     this.unsubStore = null;
     this.unsubHydrate = null;
     this.teardownCombat = null;
     this.teardownProximity = null;
     this.teardownFocus = null;
+    this.teardownMarks = null;
     this.prev = null;
   }
 
@@ -271,6 +283,32 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       if (!sprite) continue;
       applyEntityState(sprite, entity);
     }
+  }
+
+  private syncAnchor(): void {
+    const canvas = this.game.canvas;
+    const overlay = canvas.closest('main') ?? canvas.parentElement;
+    if (!overlay) return;
+    const view = this.cameras.main.worldView;
+    const canvasBox = canvas.getBoundingClientRect();
+    const overlayBox = overlay.getBoundingClientRect();
+    const screen = worldToOverlay(this.player.x, this.player.y, {
+      viewX: view.x,
+      viewY: view.y,
+      viewW: view.width,
+      viewH: view.height,
+      canvasLeft: canvasBox.left,
+      canvasTop: canvasBox.top,
+      canvasW: canvasBox.width,
+      canvasH: canvasBox.height,
+      overlayLeft: overlayBox.left,
+      overlayTop: overlayBox.top,
+    });
+    setPlayerAnchor({
+      x: screen.x,
+      y: screen.y,
+      facing: this.player.flipX ? -1 : 1,
+    });
   }
 
   private drawFloor(): void {

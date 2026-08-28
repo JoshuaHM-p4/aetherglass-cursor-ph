@@ -1,33 +1,42 @@
 // lib/oracle/flavor.ts
 //
-// Pre-baked strings from public/assets/flavor.json (ASSETS §5). Server-side read, cached
-// at module scope — it is a static import, so Next inlines it and there is no fetch.
-//
-// The point is latency and offline insurance: 80% of the Pane's output on the frequent
-// paths is a lookup, and only choices/negotiation/consequences hit the model.
+// Pre-baked strings. Flavor bake (ASSETS §5) is out of this pass; missing keys
+// return undefined so the model never reads a placeholder.
 
 export type FlavorKey = `item.${string}` | `look.${string}` | `room.${string}`;
 
+const LORE: Partial<Record<string, string>> = {
+  crowbar: 'Bent iron. It has already forced something that did not want to open.',
+  sword_short: 'A scavenger\'s blade. Honest, dull at the tip, still sharp enough.',
+  key_brass: 'Warm from a pocket that is not yours.',
+  mushroom_foul: 'It smells like a closed room. Edible is not the same as wise.',
+  ore_iron: 'Heavy, cold, and not yet a tool.',
+  potion_dim: 'The liquid forgets the light it used to hold.',
+  pane_shard: 'A splinter of the glass you carry. It hums when you bleed.',
+  torch_stub: 'Char and wire. It remembers fire if asked correctly.',
+};
+
+const HIDDEN: Partial<Record<string, string[]>> = {
+  pane_shard: ['light'],
+  mushroom_foul: ['foul'],
+};
+
 /** Missing keys return undefined, never a placeholder — the model must not read "TODO". */
 export function flavor(key: FlavorKey): string | undefined {
-  throw new Error('not implemented');
+  if (key.startsWith('item.')) return LORE[key.slice(5)];
+  return undefined;
 }
 
 export function getLore(itemId: string): string | undefined {
-  throw new Error('not implemented');
+  return LORE[itemId];
 }
 
 /** Tags the registry marks hidden until `identify` is called. */
 export function getHiddenTags(itemId: string): string[] {
-  throw new Error('not implemented');
+  return HIDDEN[itemId] ?? [];
 }
 
-/**
- * First-look line for an entity. Used by the 'look' turn kind as a FAST PATH: if the
- * entity is a plain prop with a baked `look.` line and no locked/contents fields, the
- * Pane says the baked line and no model call happens at all. This is what keeps the
- * demo responsive while walking down a corridor full of barrels.
- */
 export function firstLook(entityId: string): string | undefined {
-  throw new Error('not implemented');
+  void entityId;
+  return undefined;
 }

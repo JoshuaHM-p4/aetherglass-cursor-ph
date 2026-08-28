@@ -14,6 +14,8 @@ import { Overworld } from './scenes/Overworld';
 export const GAME_WIDTH = 480;
 export const GAME_HEIGHT = 270;
 export const TILE = 16;
+/** Integer zoom so a 30×17 floor is larger than the view and the camera can follow. */
+export const CAMERA_ZOOM = 2;
 
 export function StartGame(parent: string): Phaser.Game {
   return new Phaser.Game({

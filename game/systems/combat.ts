@@ -15,6 +15,7 @@ import Phaser from 'phaser';
 import type { Facing } from '../../lib/sim/types';
 import { world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
+import { getHotbarSlot, isWorldInputBlocked } from '../inputCapture';
 import { swingHitbox } from './hitbox';
 
 export { swingHitbox } from './hitbox';
@@ -53,7 +54,7 @@ export const DEAD_TINT = 0x555555;
 
 function equippedWeapon(): { itemId: string | null; damage: number; reach: number } {
   const { player } = world();
-  const itemId = player.hotbar[0];
+  const itemId = player.hotbar[getHotbarSlot()];
   const item = itemId ? player.bag.find((i) => i.id === itemId) : undefined;
   return {
     itemId,
@@ -73,6 +74,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
   let iframeUntil = 0;
 
   const onSpace = () => {
+    if (isWorldInputBlocked()) return;
     const now = scene.time.now;
     if (now < cooldownUntil) return;
     cooldownUntil = now + COMBAT.cooldownMs;

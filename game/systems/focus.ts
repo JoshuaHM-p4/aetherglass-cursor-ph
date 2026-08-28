@@ -8,17 +8,15 @@
 import type { FocusData } from '../../lib/oracle/protocol';
 import { bus } from '../EventBus';
 
-const GAME_WIDTH = 480;
-const GAME_HEIGHT = 270;
-
 export interface FocusSceneParts {
   /** Container whose children are named with entity ids. `getByName(entityId)` is the lookup. */
   entityLayer: Phaser.GameObjects.Container;
+  player: Phaser.Physics.Arcade.Sprite;
   dimLayer: Phaser.GameObjects.Rectangle;
   spotlight: Phaser.GameObjects.Image;
   /**
-   * Drawn inside the canvas, from the right-edge midpoint (where the Pane visually sits)
-   * to the target. Deliberately NOT a DOM overlay: a DOM leader line would need the
+   * Drawn inside the canvas, from the scavenger's shoulder (where the Pane sits) to
+   * the target. Deliberately NOT a DOM overlay: a DOM leader line would need the
    * target's screen position every frame of the 400ms camera pan, which is per-frame
    * traffic across the React/Phaser boundary for a hairline.
    */
@@ -60,7 +58,7 @@ export function installFocusSystem(
     });
     scene.spotlight.setVisible(false);
     scene.leaderLine.clear();
-    if (!reduced) scene.cameras.main.pan(GAME_WIDTH / 2, GAME_HEIGHT / 2, FOCUS_TIMING.dimOut);
+    scene.cameras.main.startFollow(scene.player, true, 1, 1);
   };
 
   const onFocus = ({ entityId, style }: FocusData) => {
@@ -79,14 +77,17 @@ export function installFocusSystem(
     });
     scene.spotlight.setPosition(target.x, target.y).setVisible(true).setAlpha(0.85);
     if (!reduced) {
+      scene.cameras.main.stopFollow();
       scene.cameras.main.pan(target.x, target.y, FOCUS_TIMING.cameraPan, 'Sine.easeInOut');
     }
     applyFocusStyle(scene, target, style);
     scene.time.delayedCall(FOCUS_TIMING.leaderDelay, () => {
       if (focused !== entityId) return;
+      const px = scene.player.x + (scene.player.flipX ? -14 : 14);
+      const py = scene.player.y - 4;
       scene.leaderLine.clear();
       scene.leaderLine.lineStyle(1, 0xc9a86a, 0.7);
-      scene.leaderLine.lineBetween(GAME_WIDTH, GAME_HEIGHT / 2, target.x, target.y);
+      scene.leaderLine.lineBetween(px, py, target.x, target.y);
     });
     releaseTimer?.remove();
     releaseTimer = scene.time.delayedCall(FOCUS_TIMING.dwell, release);

@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 
+@theme {
+  --font-serif: var(--font-crimson), 'Crimson Pro', ui-serif, Georgia, serif;
+  --font-pixel: var(--font-silkscreen), Silkscreen, ui-monospace, monospace;
+  --color-void: #0b0d14;
+  --color-amber: #c9a86a;
+  --color-glass: rgba(14, 16, 24, 0.42);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -15,10 +23,47 @@ body {
 
 main {
   height: 100%;
-  display: grid;
-  place-items: center;
+}
+
+#game-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 #game-container canvas {
   display: block;
+}
+
+.pane-glass {
+  background:
+    linear-gradient(rgba(14, 16, 24, 0.42), rgba(14, 16, 24, 0.55)) padding-box,
+    linear-gradient(135deg, rgba(201, 168, 106, 0.85) 0%, rgba(201, 168, 106, 0.15) 38%, transparent 70%)
+      border-box;
+  border: 1px solid transparent;
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+}
+
+.pane-thinking {
+  animation: pane-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes pane-breathe {
+  0%,
+  100% {
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  }
+  50% {
+    backdrop-filter: blur(22px) saturate(1.4);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-thinking {
+    animation: none;
+  }
 }

@@ -1,14 +1,6 @@
-// components/pane/ChoiceRack.tsx
-//
-// RPG choice buttons. The visible half of open question 3.
-//
-// The idempotency of the choice round-trip is a TYPE, not a disabled flag: the rack is a
-// discriminated union, and the `resolved` branch has no `onChoose` path to reach. A
-// component holding a `resolved` rack cannot fire a second turn even if the player mashes
-// it, and there is no `hasChosen` boolean anywhere to forget to set.
-
 'use client';
 
+import { motion, useReducedMotion } from 'motion/react';
 import type { JSX } from 'react';
 import type { ChoiceRack as Rack } from '../../lib/client/useOracleTurn';
 
@@ -18,21 +10,79 @@ export interface ChoiceRackProps {
   onChoose: (choiceId: string) => void;
 }
 
-/**
- * USAGE:
- *   {rack && <ChoiceRack rack={rack} onChoose={choose} />}
- *
- * Renders `risk` as a glyph, not a word: safe = a plain dot, costly = a coin, unknown = a
- * hairline question mark. PRD §4.4 — "choosing is informed but not solved", so the glyph
- * is the only affordance and there is no probability text.
- *
- * `usesItemId` puts the item's 16x16 icon in the button, which is the cheapest possible
- * demonstration of the PRD §4.4 beat: pick up the crowbar and the door's options grow an
- * option with a crowbar in it.
- */
 export default function ChoiceRack({ rack, onChoose }: ChoiceRackProps): JSX.Element {
-  throw new Error('not implemented');
-  // TODO  slide up staggered 40ms apart (ARCHITECTURE §7), reduced-motion -> no stagger
-  //       resolved: collapse to a single chosen chip, the others fade to 15% and stay
-  //                 visible — the player should see the road not taken
+  const reduced = useReducedMotion();
+
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="font-serif text-[13px] leading-snug text-amber-100/80">{rack.prompt}</p>
+      <ul className="flex flex-col gap-1.5">
+        {rack.choices.map((choice, i) => (
+          <ChoiceRow
+            key={choice.id}
+            choice={choice}
+            index={i}
+            reduced={Boolean(reduced)}
+            rack={rack}
+            onChoose={onChoose}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+type Offered = Rack['choices'][number];
+
+function ChoiceRow({
+  choice,
+  index,
+  reduced,
+  rack,
+  onChoose,
+}: {
+  choice: Offered;
+  index: number;
+  reduced: boolean;
+  rack: Rack;
+  onChoose: (choiceId: string) => void;
+}): JSX.Element {
+  const inner = (
+    <>
+      <RiskGlyph risk={choice.risk} />
+      <span className="font-serif text-[14px] leading-snug">{choice.label}</span>
+    </>
+  );
+  const frame =
+    'flex w-full items-start gap-2 border border-amber-400/25 bg-black/25 px-2.5 py-1.5 text-left text-amber-50/90';
+
+  if (rack.status === 'pending') {
+    return (
+      <motion.li
+        initial={reduced ? false : { y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.28, delay: reduced ? 0 : index * 0.04, ease: 'easeOut' }}
+      >
+        <button type="button" className={`${frame} hover:border-amber-300/70 hover:bg-black/40`} onClick={() => onChoose(choice.id)}>
+          {inner}
+        </button>
+      </motion.li>
+    );
+  }
+
+  const chosen = rack.chosenId === choice.id;
+  return (
+    <li className={chosen ? '' : 'opacity-[0.15]'}>
+      <div className={`${frame} ${chosen ? 'border-amber-300/70' : ''}`}>{inner}</div>
+    </li>
+  );
+}
+
+function RiskGlyph({ risk }: { risk: Offered['risk'] }) {
+  const label = risk === 'safe' ? '·' : risk === 'costly' ? '◎' : '?';
+  return (
+    <span className="mt-0.5 font-pixel text-[10px] text-amber-300/80" title={risk} aria-label={risk}>
+      {label}
+    </span>
+  );
 }

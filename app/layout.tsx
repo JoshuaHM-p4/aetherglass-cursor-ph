@@ -1,5 +1,19 @@
 import type { Metadata } from 'next';
+import { Crimson_Pro, Silkscreen } from 'next/font/google';
 import './globals.css';
+
+const crimson = Crimson_Pro({
+  subsets: ['latin'],
+  variable: '--font-crimson',
+  display: 'swap',
+});
+
+const silkscreen = Silkscreen({
+  weight: '400',
+  subsets: ['latin'],
+  variable: '--font-silkscreen',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Aetherglass',
@@ -8,7 +22,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${crimson.variable} ${silkscreen.variable}`}>
       <body>{children}</body>
     </html>
   );

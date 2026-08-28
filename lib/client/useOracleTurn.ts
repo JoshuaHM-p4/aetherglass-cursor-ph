@@ -1,39 +1,39 @@
 // lib/client/useOracleTurn.ts
 //
-// THE PANE'S ENTIRE API. This is the deep-interface bet of the design: one hook, six
-// members, hiding the transport, the packet, the snapshot, verdict replay, the journal,
-// the prefetch buffer, the choice round-trip, and the EventBus forwarding.
-//
-// `components/pane/Pane.tsx` imports this and nothing else from lib/. It never sees an
-// `OracleRequest`, a `data-verdict`, a `ContextPacket`, or a `GameState`. If a wire type
-// ever appears in this file's exports, the abstraction has failed.
+// THE PANE'S ENTIRE API. One hook, six members.
 
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
 import { useChat } from '@ai-sdk/react';
+import type { UIMessage } from 'ai';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { bus } from '../../game/EventBus';
-import { emptyJournal } from '../oracle/journal';
-import { world } from '../sim/store';
-import type { OfferedChoice, TurnId } from '../oracle/protocol';
+import { emptyJournal, isTurnCommitted, record, type PaneJournal } from '../oracle/journal';
+import type { ChoicesData, FocusData, OfferedChoice, TurnId, Verdict } from '../oracle/protocol';
+import { verdictKey } from '../oracle/protocol';
+import { gameStore, world } from '../sim/store';
+import type { Action } from '../sim/types';
+import {
+  getActiveSessionId,
+  getSession,
+  putSession,
+  setActiveSessionId,
+  setSessionDismissHandler,
+  type StoredPaneSession,
+} from './paneSessions';
+import { isRestatedNarration, shapePaneText } from './paneText';
 import type { PrefetchController } from './prefetch';
 import { createOracleTransport } from './transport';
 
 /** What the glass is doing. Drives the breathing blur and the input's disabled state. */
 export type PaneStatus = 'asleep' | 'ready' | 'thinking' | 'streaming' | 'error';
 
-/**
- * A choice rack, as the component renders it. `offerId` is the server-stamped identity
- * (grafted from arena candidate-2): a click is honored only when its offerId matches the
- * current rack's, so stale racks and replayed buffers cannot re-enter the chat.
- */
 export type ChoiceRack =
   | { status: 'pending'; turnId: TurnId; offerId: string; prompt: string;
       choices: readonly OfferedChoice[] }
   | { status: 'resolved'; turnId: TurnId; offerId: string; prompt: string;
       choices: readonly OfferedChoice[]; chosenId: string };
 
-/** One rendered line. `refusals` is what makes demo beat 3 visible rather than merely told. */
 export interface PaneMessage {
   id: string;
   role: 'player' | 'pane';
@@ -45,38 +45,12 @@ export interface PaneMessage {
 export interface OracleTurnApi {
   messages: readonly PaneMessage[];
   status: PaneStatus;
-  /** Latest rack, or null. Only ever one on screen. */
   rack: ChoiceRack | null;
-
-  /** Free text. PRD §3 "Speak". */
+  /** Entity the glass is currently speaking about, or null when parked. */
+  activeEntityId: string | null;
   ask(text: string): void;
-
-  /**
-   * OPEN QUESTION 3 — the choice round-trip, resolved.
-   *
-   * One call, four steps, in this order:
-   *   1. mark the rack resolved (so a second click is a no-op — the type makes the
-   *      resolved branch unable to be clicked, and `isTurnCommitted` is the runtime
-   *      backstop for the in-flight window);
-   *   2. record a `committed` journal entry ("the player committed to: pry it with the
-   *      crowbar (costly, uses crowbar)") — this is what stops the model re-offering the
-   *      same options, per ARCHITECTURE §9;
-   *   3. `sendMessage({ text: choice.label }, { body: { kind: 'choose', offerId, choiceId } })`
-   *      — the label becomes a normal player bubble, which is what it looks like from the
-   *      player's side, while `kind: 'choose'` swaps in the prompt block that says the
-   *      decision is already taken;
-   *   4. discard any prefetch buffer (a buffered stream was generated before the
-   *      commitment and cannot know about it).
-   *
-   * The choice does NOT touch the sim. Consequences arrive as verdicts on the next
-   * response, through the same path as everything else — there is no second write path
-   * into the world for buttons.
-   */
   choose(choiceId: string): void;
-
-  /** Pressed Enter on an entity. Claims any prefetched buffer for it. */
   look(entityId: string): void;
-
   retry(): void;
 }
 
@@ -92,28 +66,53 @@ const PREFETCH_UNARMED: PrefetchController = {
 };
 
 function textOf(message: { parts: ReadonlyArray<{ type: string; text?: string }> }): string {
-  let text = '';
+  const chunks: string[] = [];
   for (const part of message.parts) {
-    if (part.type === 'text' && part.text !== undefined) {
-      text += part.text;
-    }
+    if (part.type === 'text' && part.text) chunks.push(part.text);
   }
-  return text;
+  return shapePaneText(chunks.join('')).text;
 }
 
-/**
- * Mount once, inside <Pane/>. Wires:
- *   useChat({ transport: createOracleTransport(...), onData })
- *
- * `onData` is the single place incoming parts fan out, and the fan-out is total:
- *   data-focus   -> bus.emit('pane:focus', data)
- *   data-choices -> setRack({ status: 'pending', ... })
- *   data-verdict -> gameStore.getState().applyVerdict(data)  ← the commit
- *                   + on 'diverged' or 'refused', journal.record(...)
- *
- * Note the asymmetry that makes the whole thing safe: parts flow one way, and the only
- * thing that ever writes GameState from this file is `applyVerdict`.
- */
+function describeAction(action: Action): string {
+  if (action.type === 'GRANT_ITEM') return `grant ${action.itemId}`;
+  if (action.type === 'OPEN_CONTAINER') return `open ${action.entityId}`;
+  if (action.type === 'UNLOCK') return `unlock ${action.entityId}`;
+  return action.type.toLowerCase();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function asFocus(data: unknown): FocusData | null {
+  if (!isRecord(data) || typeof data.entityId !== 'string') return null;
+  if (data.style !== 'spotlight' && data.style !== 'pulse' && data.style !== 'shatter') return null;
+  return { entityId: data.entityId, style: data.style };
+}
+
+function asChoices(data: unknown): ChoicesData | null {
+  if (!isRecord(data)) return null;
+  if (typeof data.turnId !== 'string' || typeof data.offerId !== 'string') return null;
+  if (typeof data.prompt !== 'string' || !Array.isArray(data.choices)) return null;
+  return data as unknown as ChoicesData;
+}
+
+function asVerdict(data: unknown): Verdict | null {
+  if (!isRecord(data)) return null;
+  if (typeof data.turnId !== 'string' || typeof data.seq !== 'number') return null;
+  if (!isRecord(data.action) || typeof data.action.type !== 'string') return null;
+  if (typeof data.ok !== 'boolean') return null;
+  return data as unknown as Verdict;
+}
+
+function cloneMessages(messages: UIMessage[]): UIMessage[] {
+  try {
+    return structuredClone(messages);
+  } catch {
+    return JSON.parse(JSON.stringify(messages)) as UIMessage[];
+  }
+}
+
 export function useOracleTurn(): OracleTurnApi {
   const journalRef = useRef(emptyJournal());
   const transport = useMemo(
@@ -127,18 +126,158 @@ export function useOracleTurn(): OracleTurnApi {
     [],
   );
 
-  const { messages: uiMessages, sendMessage, status: chatStatus, regenerate } = useChat({
-    transport,
-  });
+  const [rack, setRack] = useState<ChoiceRack | null>(null);
+  const rackRef = useRef(rack);
+  rackRef.current = rack;
+  const [activeEntityId, setActiveEntity] = useState<string | null>(getActiveSessionId);
+
+  const frozenRefusals = useRef<Record<string, Array<{ action: string; reason: string }>>>({});
+  const liveRefusals = useRef<Array<{ action: string; reason: string }>>([]);
+  const lastPaneId = useRef<string | null>(null);
+  const recoveredFocus = useRef(new Set<string>());
+  const streamOwnerRef = useRef<string | null>(null);
+  const [, bump] = useState(0);
+
+  const freezeRefusals = () => {
+    const id = lastPaneId.current;
+    if (id && liveRefusals.current.length > 0) {
+      frozenRefusals.current[id] = liveRefusals.current;
+      liveRefusals.current = [];
+    }
+  };
+
+  const { messages: uiMessages, sendMessage, status: chatStatus, regenerate, setMessages } =
+    useChat({
+      transport,
+      onData: (part) => {
+        if (part.type === 'data-focus') {
+          const data = asFocus(part.data);
+          if (data) bus.emit('pane:focus', data);
+          return;
+        }
+        if (part.type === 'data-choices') {
+          const data = asChoices(part.data);
+          if (!data) return;
+          journalRef.current = record(journalRef.current, {
+            turnId: data.turnId,
+            kind: 'offered',
+            line: `offered: ${data.choices.map((c) => c.label).join(' / ')}`,
+          });
+          setRack({
+            status: 'pending',
+            turnId: data.turnId,
+            offerId: data.offerId,
+            prompt: data.prompt,
+            choices: data.choices,
+          });
+          return;
+        }
+        if (part.type !== 'data-verdict') return;
+        const verdict = asVerdict(part.data);
+        if (!verdict) return;
+        const outcome = gameStore.getState().applyVerdict({
+          key: verdictKey(verdict),
+          action: verdict.action,
+          ok: verdict.ok,
+          reason: verdict.reason,
+        });
+        if (outcome.status === 'diverged') {
+          journalRef.current = record(journalRef.current, {
+            turnId: verdict.turnId,
+            kind: 'diverged',
+            line: `the world moved: ${verdict.action.type} (${outcome.reason})`,
+          });
+        }
+        if (outcome.status === 'refused' || !verdict.ok) {
+          const reason =
+            verdict.reason ?? (outcome.status === 'refused' ? outcome.reason : 'no_such_entity');
+          const chip = { action: describeAction(verdict.action), reason };
+          liveRefusals.current = [...liveRefusals.current, chip];
+          journalRef.current = record(journalRef.current, {
+            turnId: verdict.turnId,
+            kind: 'refused',
+            line: `the world refused: ${chip.action} (${reason})`,
+          });
+          bump((n) => n + 1);
+        }
+      },
+    });
+
   const sendRef = useRef(sendMessage);
   sendRef.current = sendMessage;
   const chatStatusRef = useRef(chatStatus);
   chatStatusRef.current = chatStatus;
+  const uiMessagesRef = useRef(uiMessages);
+  uiMessagesRef.current = uiMessages;
+  const setMessagesRef = useRef(setMessages);
+  setMessagesRef.current = setMessages;
+
+  const capture = (entityId: string): StoredPaneSession => {
+    freezeRefusals();
+    return {
+      entityId,
+      messages: cloneMessages(uiMessagesRef.current),
+      journal: { entries: [...journalRef.current.entries] },
+      rack: rackRef.current,
+      frozenRefusals: { ...frozenRefusals.current },
+    };
+  };
+
+  const restore = (session: StoredPaneSession) => {
+    journalRef.current = session.journal;
+    frozenRefusals.current = { ...session.frozenRefusals };
+    liveRefusals.current = [];
+    setRack((session.rack as ChoiceRack | null) ?? null);
+    setMessagesRef.current(session.messages as UIMessage[]);
+  };
+
+  const parkCurrent = () => {
+    const id = getActiveSessionId();
+    if (!id) return;
+    putSession(capture(id));
+  };
 
   const lookAt = (entityId: string) => {
-    if (chatStatusRef.current === 'submitted' || chatStatusRef.current === 'streaming') return;
+    const streaming =
+      chatStatusRef.current === 'submitted' || chatStatusRef.current === 'streaming';
     const entity = world().entities[entityId];
     if (!entity) return;
+
+    if (streaming) {
+      if (streamOwnerRef.current === entityId) {
+        setActiveSessionId(entityId);
+        setActiveEntity(entityId);
+        bus.emit('pane:awake', { open: true, reason: 'interact' });
+        bus.emit('pane:focus', { entityId, style: 'spotlight' });
+      }
+      return;
+    }
+
+    if (getActiveSessionId() === entityId) {
+      bus.emit('pane:awake', { open: true, reason: 'interact' });
+      bus.emit('pane:focus', { entityId, style: 'spotlight' });
+      return;
+    }
+
+    parkCurrent();
+    const existing = getSession(entityId);
+    setActiveSessionId(entityId);
+    setActiveEntity(entityId);
+    streamOwnerRef.current = entityId;
+    freezeRefusals();
+    bus.emit('pane:awake', { open: true, reason: 'interact' });
+    bus.emit('pane:focus', { entityId, style: 'spotlight' });
+
+    if (existing && existing.messages.length > 0) {
+      restore(existing);
+      return;
+    }
+
+    journalRef.current = emptyJournal();
+    frozenRefusals.current = {};
+    liveRefusals.current = [];
+    setRack(null);
+    setMessagesRef.current([]);
     void sendRef.current(
       { text: `I look at the ${entity.name}.` },
       { body: { kind: 'look' } },
@@ -149,36 +288,122 @@ export function useOracleTurn(): OracleTurnApi {
 
   useEffect(() => bus.on('world:interact', ({ entityId }) => lookRef.current(entityId)), []);
 
-  const messages: PaneMessage[] = [];
-  for (const message of uiMessages) {
-    if (message.role !== 'user' && message.role !== 'assistant') continue;
-    messages.push({
-      id: message.id,
-      role: message.role === 'user' ? 'player' : 'pane',
-      text: textOf(message),
-      refusals: [],
+  useEffect(() => {
+    setSessionDismissHandler(() => {
+      const id = getActiveSessionId();
+      if (!id) return;
+      putSession(capture(id));
+      setActiveSessionId(null);
+      setActiveEntity(null);
+      setRack(null);
+      setMessagesRef.current([]);
+      journalRef.current = emptyJournal();
+      bus.emit('pane:focus_clear', {});
+      bus.emit('pane:awake', { open: false, reason: 'closed' });
+      bump((n) => n + 1);
     });
+    return () => setSessionDismissHandler(null);
+  }, []);
+
+  useEffect(() => {
+    if (chatStatus === 'ready' || chatStatus === 'error') {
+      const owner = streamOwnerRef.current;
+      if (owner && getActiveSessionId() !== owner) {
+        putSession(capture(owner));
+      }
+    }
+  }, [chatStatus]);
+
+  useEffect(() => {
+    for (const message of uiMessages) {
+      if (message.role !== 'assistant') continue;
+      if (recoveredFocus.current.has(message.id)) continue;
+      const raw = message.parts
+        .map((part) => (part.type === 'text' && part.text ? part.text : ''))
+        .join('');
+      const { focus } = shapePaneText(raw);
+      if (!focus) continue;
+      recoveredFocus.current.add(message.id);
+      bus.emit('pane:focus', focus);
+    }
+  }, [uiMessages]);
+
+  const sessionOpen = activeEntityId !== null;
+  const messages: PaneMessage[] = [];
+  if (sessionOpen) {
+    for (const message of uiMessages) {
+      if (message.role !== 'user' && message.role !== 'assistant') continue;
+      const role = message.role === 'user' ? 'player' : 'pane';
+      const text = textOf(message);
+      if (role === 'pane') {
+        const prev = messages.at(-1);
+        if (prev?.role === 'pane' && isRestatedNarration(prev.text, text)) continue;
+        lastPaneId.current = message.id;
+      }
+      const live = role === 'pane' && message.id === lastPaneId.current ? liveRefusals.current : [];
+      messages.push({
+        id: message.id,
+        role,
+        text,
+        refusals: frozenRefusals.current[message.id] ?? live,
+      });
+    }
   }
 
   let status: PaneStatus;
-  if (chatStatus === 'submitted') status = 'thinking';
+  if (!sessionOpen) status = 'asleep';
+  else if (chatStatus === 'submitted') status = 'thinking';
   else if (chatStatus === 'streaming') status = 'streaming';
   else if (chatStatus === 'error') status = 'error';
   else if (messages.length === 0) status = 'asleep';
   else status = 'ready';
 
+  const ask = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (trimmed === '') return;
+      if (!getActiveSessionId()) return;
+      freezeRefusals();
+      streamOwnerRef.current = getActiveSessionId();
+      bus.emit('pane:awake', { open: true, reason: 'typed' });
+      void sendMessage({ text: trimmed });
+    },
+    [sendMessage],
+  );
+
+  const choose = useCallback(
+    (choiceId: string) => {
+      const current = rackRef.current;
+      if (!current || current.status !== 'pending') return;
+      if (current.offerId !== rackRef.current?.offerId) return;
+      if (isTurnCommitted(journalRef.current, current.turnId)) return;
+      const choice = current.choices.find((c) => c.id === choiceId);
+      if (!choice) return;
+      setRack({ ...current, status: 'resolved', chosenId: choiceId });
+      journalRef.current = record(journalRef.current, {
+        turnId: current.turnId,
+        kind: 'committed',
+        line: `the player committed to: ${choice.label} (${choice.risk}${
+          choice.usesItemId ? `, uses ${choice.usesItemId}` : ''
+        })`,
+      });
+      freezeRefusals();
+      streamOwnerRef.current = getActiveSessionId();
+      void sendMessage(
+        { text: choice.label },
+        { body: { kind: 'choose', offerId: current.offerId, choiceId } },
+      );
+    },
+    [sendMessage],
+  );
+
   return {
     messages,
     status,
-    rack: null,
-    ask(text: string) {
-      const trimmed = text.trim();
-      if (trimmed === '') return;
-      void sendMessage({ text: trimmed });
-    },
-    choose(_choiceId: string) {
-      throw new Error('not implemented');
-    },
+    rack: sessionOpen ? rack : null,
+    activeEntityId,
+    ask,
+    choose,
     look(entityId: string) {
       lookAt(entityId);
     },
@@ -187,3 +412,5 @@ export function useOracleTurn(): OracleTurnApi {
     },
   };
 }
+
+export type { PaneJournal };

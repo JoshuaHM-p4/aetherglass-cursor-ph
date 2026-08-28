@@ -18,6 +18,7 @@ import {
   buildSystemPrompt, pickModel, type OracleProvider,
 } from '../../../lib/oracle/prompt';
 import { createTurnSim, parseOracleRequest } from '../../../lib/oracle/turn';
+import { buildTools } from '../../../lib/oracle/tools';
 
 export const maxDuration = 30;
 /** Node, not edge: `structuredClone` in the reducer and a static flavor.json import. */
@@ -25,11 +26,8 @@ export const runtime = 'nodejs';
 
 /**
  * One turn = one request = one `streamText` call. Tool continuation happens as STEPS
- * inside that call (`stopWhen: stepCountIs(4)`), not as a second round trip: the model
- * gets a real `{ ok, reason }` from the fork and keeps talking on the same stream.
- *
- * Step budget of 4: text -> focus_entity -> mutation -> text-about-the-outcome. Anything
- * beyond that is the model looping, and cutting it off is better than a 6-second turn.
+ * inside that call (`stopWhen: stepCountIs(4)` for speak/choose; look/prefetch stop
+ * after the forced focus plus one narration), not as a second round trip.
  */
 export async function POST(req: Request) {
   let parsed: ReturnType<typeof parseOracleRequest>;
@@ -63,11 +61,24 @@ export async function POST(req: Request) {
       });
       const modelId = pickModel(kind, turn.packet, provider);
 
+      const glance = kind === 'look' || kind === 'prefetch';
       const result = streamText({
         model: provider === 'anthropic' ? anthropic(modelId) : openai(modelId),
         system,
         messages: await convertToModelMessages(messages as UIMessage[]),
-        stopWhen: stepCountIs(4),
+        tools: buildTools(turn),
+        // toolChoice is sticky across steps. Forcing focus_entity at the top
+        // level made every continuation call it again, then narrate again —
+        // the glass spoke the same look twice.
+        ...(glance
+          ? {
+              prepareStep: ({ stepNumber }: { stepNumber: number }) =>
+                stepNumber === 0
+                  ? { toolChoice: { type: 'tool' as const, toolName: 'focus_entity' } }
+                  : { toolChoice: 'none' as const },
+            }
+          : {}),
+        stopWhen: stepCountIs(glance ? 2 : 4),
         ...(provider === 'anthropic'
           ? { providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } }
           : {}),

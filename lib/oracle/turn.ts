@@ -12,6 +12,8 @@
 // verdict stream. If the process died mid-turn the world would simply not have changed.
 
 import { z } from 'zod';
+import { applyAction } from '../sim/reducer';
+import { check, LIMITS } from '../sim/rules';
 import type { Action, ContextPacket, GameState, RejectReason } from '../sim/types';
 import { buildContextPacket } from './context';
 import type { JournalKind, PaneJournal } from './journal';
@@ -61,6 +63,9 @@ export interface TurnSim {
   /** Per-turn ceilings from rules.LIMITS. Returns false once spent; tools report `ok: false`. */
   spend(budget: 'focus' | 'grant' | 'effect'): boolean;
 
+  /** Custom data parts (focus, choices) — mutations go through propose, which writes verdicts. */
+  readonly writer: PartWriter;
+
   /** For the route's logging and for a dev overlay. */
   verdicts(): readonly Verdict[];
 }
@@ -72,24 +77,71 @@ export function createTurnSim(args: {
   kind: TurnKind;
   writer: PartWriter;
 }): TurnSim {
-  const fork = structuredClone(args.snapshot);
+  let fork = structuredClone(args.snapshot);
   const packet = buildContextPacket(fork, args.journal);
   const recorded: Verdict[] = [];
-  const refuse: ProposalResult = { ok: false, reason: H3_REFUSE_REASON };
+  let seq = 0;
+  const spent = { focus: 0, grant: 0, effect: 0 };
+  const cap = {
+    focus: LIMITS.focusCallsPerTurn,
+    grant: LIMITS.grantsPerTurn,
+    effect: 1,
+  } as const;
+
+  const emit = (action: Action, ok: boolean, reason: RejectReason | undefined, events: Verdict['events']): void => {
+    seq += 1;
+    const verdict: Verdict = {
+      turnId: args.turnId,
+      seq,
+      action,
+      ok,
+      events,
+      ...(reason !== undefined ? { reason } : {}),
+    };
+    recorded.push(verdict);
+    args.writer.write({ type: 'data-verdict', data: verdict });
+  };
+
+  const propose = (action: Action): ProposalResult => {
+    const result = applyAction(fork, action);
+    if (result.ok) fork = result.state;
+    emit(action, result.ok, result.reason, result.events);
+    if (!result.ok) return { ok: false, reason: result.reason ?? 'no_such_entity' };
+    return { ok: true };
+  };
+
+  const proposeAll = (actions: readonly Action[]): ProposalResult => {
+    for (const action of actions) {
+      const verdict = check(fork, action);
+      if (!verdict.ok) {
+        emit(action, false, verdict.reason, []);
+        return { ok: false, reason: verdict.reason };
+      }
+    }
+    for (const action of actions) {
+      const step = propose(action);
+      if (!step.ok) return step;
+    }
+    return { ok: true };
+  };
+
   return {
     turnId: args.turnId,
     kind: args.kind,
     packet,
     journal: args.journal,
+    writer: args.writer,
     state: () => fork,
-    propose: () => refuse,
-    proposeAll: () => refuse,
-    spend: () => false,
+    propose,
+    proposeAll,
+    spend(budget) {
+      if (spent[budget] >= cap[budget]) return false;
+      spent[budget] += 1;
+      return true;
+    },
     verdicts: () => recorded,
   };
 }
-
-const H3_REFUSE_REASON: RejectReason = 'wrong_kind';
 
 const TURN_KINDS = ['speak', 'look', 'choose', 'prefetch'] as const;
 const JOURNAL_KINDS = [

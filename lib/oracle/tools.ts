@@ -41,6 +41,10 @@
 
 import { tool } from 'ai';
 import { z } from 'zod';
+import { findRecipesFor } from '../sim/recipes';
+import { findItem } from '../sim/select';
+import type { Action } from '../sim/types';
+import { getHiddenTags, getLore } from './flavor';
 import type { TurnSim } from './turn';
 
 // ---------------------------------------------------------------- schemas
@@ -83,15 +87,26 @@ export type OfferChoicesInput = z.infer<typeof offerChoicesInput>;
 export type EffectInput = z.infer<typeof effectInput>;
 
 /** effect -> Action. The only mapping in the file, and it is total over the union. */
-export function effectToAction(effect: EffectInput): import('../sim/types').Action {
-  throw new Error('not implemented');
+export function effectToAction(effect: EffectInput): Action {
+  switch (effect.kind) {
+    case 'damage':
+      return { type: 'DAMAGE', amount: effect.amount, source: effect.source };
+    case 'heal':
+      return { type: 'HEAL', amount: effect.amount };
+    case 'grant':
+      return { type: 'GRANT_ITEM', itemId: effect.itemId, fromEntityId: effect.fromEntityId };
+    case 'consume':
+      return { type: 'CONSUME_ITEM', itemId: effect.itemId };
+    case 'set_flag':
+      return { type: 'SET_FLAG', flag: effect.flag, value: effect.value };
+  }
 }
 
 // ---------------------------------------------------------------- toolset
 
 /** 'speak' | 'choose' may mutate; 'look' | 'prefetch' may only observe and offer. */
 export function canMutate(kind: TurnSim['kind']): boolean {
-  throw new Error('not implemented');
+  return kind === 'speak' || kind === 'choose';
 }
 
 /**
@@ -102,53 +117,92 @@ export function canMutate(kind: TurnSim['kind']): boolean {
  * the object, not stubbed to refuse, so the model never sees hands it must not use.
  */
 export function buildTools(turn: TurnSim) {
-  // TODO  const mutating = canMutate(turn.kind) ? { open_container, unlock, apply_effect } : {};
-  //       return { focus_entity, offer_choices, suggest_craft, identify, ...mutating };
+  let offerSeq = 0;
+
+  const focus_entity = tool({
+    description:
+      "Draw the player's eye to one nearby thing. Call this the instant you first mention " +
+      'something in the world — the light lands while your sentence is still being read. ' +
+      'Only ids listed in nearby[] are valid. Use at most twice per reply.',
+    inputSchema: focusInput,
+    execute: async ({ entityId, style }) => {
+      if (!turn.spend('focus')) return { ok: false, reason: 'not_nearby' };
+      if (!turn.packet.nearby.some((e) => e.id === entityId)) {
+        return { ok: false, reason: 'not_nearby' };
+      }
+      turn.writer.write({ type: 'data-focus', data: { entityId, style } });
+      return { ok: true };
+    },
+  });
+
+  const offer_choices = tool({
+    description:
+      'Present 2-4 courses of action as buttons. Call this whenever the player faces a real ' +
+      'decision — a sealed container, a fight they would lose, a shrine that wants something. ' +
+      'Choices must be grounded in what they are actually carrying. Never offer an option ' +
+      'that requires an item absent from inventory[]. Do not offer choices for trivia.',
+    inputSchema: offerChoicesInput,
+    execute: async ({ prompt, choices }) => {
+      const live = turn.state();
+      const bad = choices.find((c) => c.usesItemId && !findItem(live, c.usesItemId));
+      if (bad) return { ok: false, reason: 'not_in_bag', offendingChoice: bad.id };
+      offerSeq += 1;
+      const offerId = `${turn.turnId}:${offerSeq}`;
+      turn.writer.write({
+        type: 'data-choices',
+        data: { turnId: turn.turnId, offerId, prompt, choices },
+      });
+      return { ok: true };
+    },
+  });
+
+  const suggest_craft = tool({
+    description:
+      'Name one thing the player could make right now from what they carry. Read-only — you ' +
+      'cannot craft on their behalf; they must do it at the bag. Only call this when asked, ' +
+      'or when they are visibly stuck and holding the right materials.',
+    inputSchema: z.object({
+      materialIds: z.array(z.string()).describe('Ids from inventory[] to consider'),
+    }),
+    execute: async ({ materialIds }) => {
+      const live = turn.state();
+      const missing = materialIds.filter((id) => !findItem(live, id));
+      if (missing.length > 0) return { ok: false, reason: 'not_in_bag', missing };
+      return {
+        ok: true,
+        recipes: findRecipesFor(live, materialIds).map((r) => ({
+          id: r.id,
+          name: r.name,
+          hint: r.hint,
+          output: r.output,
+        })),
+      };
+    },
+  });
+
+  const identify = tool({
+    description:
+      'Read an item properly — its history, its hidden properties. Prefer the pre-baked lore ' +
+      'over inventing new facts; the world has a history and you did not write it.',
+    inputSchema: z.object({ itemId: z.string() }),
+    execute: async ({ itemId }) => {
+      const item = findItem(turn.state(), itemId);
+      if (!item) return { ok: false, reason: 'not_in_bag' };
+      return {
+        ok: true,
+        name: item.name,
+        tags: item.tags,
+        lore: getLore(itemId),
+        hiddenTags: getHiddenTags(itemId),
+      };
+    },
+  });
+
+  const readOnly = { focus_entity, offer_choices, suggest_craft, identify };
+  if (!canMutate(turn.kind)) return readOnly;
+
   return {
-    // ---------------------------------------------------------------- world
-
-    focus_entity: tool({
-      description:
-        "Draw the player's eye to one nearby thing. Call this the instant you first mention " +
-        'something in the world — the light lands while your sentence is still being read. ' +
-        'Only ids listed in nearby[] are valid. Use at most twice per reply.',
-      inputSchema: focusInput,
-      execute: async ({ entityId, style }) => {
-        throw new Error('not implemented');
-        // TODO
-        //   if (!turn.spend('focus')) return { ok: false, reason: 'not_nearby' };  // budget spent
-        //   if (!turn.packet.nearby.some(e => e.id === entityId))
-        //     return { ok: false, reason: 'not_nearby' };
-        //   turn.writer.write({ type: 'data-focus', data: { entityId, style } });
-        //   return { ok: true };
-        // Read-only + pure UI, so it is the one tool that legitimately validates
-        // against the packet: `nearby` IS the definition of what may be focused.
-      },
-    }),
-
-    offer_choices: tool({
-      description:
-        'Present 2-4 courses of action as buttons. Call this whenever the player faces a real ' +
-        'decision — a sealed container, a fight they would lose, a shrine that wants something. ' +
-        'Choices must be grounded in what they are actually carrying. Never offer an option ' +
-        'that requires an item absent from inventory[]. Do not offer choices for trivia.',
-      inputSchema: offerChoicesInput,
-      execute: async ({ prompt, choices }) => {
-        throw new Error('not implemented');
-        // TODO
-        //   const bad = choices.find(c => c.usesItemId && !findItem(turn.state(), c.usesItemId));
-        //   if (bad) return { ok: false, reason: 'not_in_bag', offendingChoice: bad.id };
-        //   const offerId = `${turn.turnId}:${nextOfferSeq++}`;   // server-stamped identity
-        //   turn.writer.write({ type: 'data-choices',
-        //     data: { turnId: turn.turnId, offerId, prompt, choices } });
-        //   return { ok: true };
-        // No Action, no guard to defer to. Reads fork state, not the packet, so a grant
-        // earlier in this same turn makes a new choice legal immediately.
-      },
-    }),
-
-    // ---------------------------------------------------------------- mutations
-
+    ...readOnly,
     open_container: tool({
       description:
         'Open a chest, lockbox, or barrel the player is adjacent to. Only for kind="container". ' +
@@ -156,7 +210,6 @@ export function buildTools(turn: TurnSim) {
       inputSchema: z.object({ entityId: z.string() }),
       execute: async ({ entityId }) => turn.propose({ type: 'OPEN_CONTAINER', entityId }),
     }),
-
     unlock: tool({
       description:
         "Use a carried item to defeat a lock, seal, or bar. The sim decides whether the item's " +
@@ -169,7 +222,6 @@ export function buildTools(turn: TurnSim) {
       execute: async ({ entityId, withItemId }) =>
         turn.propose({ type: 'UNLOCK', entityId, withItemId }),
     }),
-
     apply_effect: tool({
       description:
         'Apply the consequences of what just happened: damage, healing, an item gained or spent, ' +
@@ -177,41 +229,14 @@ export function buildTools(turn: TurnSim) {
         'something. Do not use it to hand out rewards for conversation alone.',
       inputSchema: applyEffectInput,
       execute: async ({ effects }) => {
-        throw new Error('not implemented');
-        // TODO
-        //   if (!turn.spend('effect')) return { ok: false, reason: 'already_open' };
-        //   return turn.proposeAll(effects.map(effectToAction));
-        // Atomic: the fork either takes all three or none. A trade where only the cost
-        // landed is the worst possible bug in a negotiation demo.
-      },
-    }),
-
-    // ---------------------------------------------------------------- read-only
-
-    suggest_craft: tool({
-      description:
-        'Name one thing the player could make right now from what they carry. Read-only — you ' +
-        'cannot craft on their behalf; they must do it at the bag. Only call this when asked, ' +
-        'or when they are visibly stuck and holding the right materials.',
-      inputSchema: z.object({
-        materialIds: z.array(z.string()).describe('Ids from inventory[] to consider'),
-      }),
-      execute: async ({ materialIds }) => {
-        throw new Error('not implemented');
-        // TODO  missing = materialIds.filter(id => !findItem(turn.state(), id))
-        //       -> { ok: false, reason: 'not_in_bag', missing }
-        //       -> { ok: true, recipes: findRecipesFor(turn.state(), materialIds) }
-      },
-    }),
-
-    identify: tool({
-      description:
-        'Read an item properly — its history, its hidden properties. Prefer the pre-baked lore ' +
-        'over inventing new facts; the world has a history and you did not write it.',
-      inputSchema: z.object({ itemId: z.string() }),
-      execute: async ({ itemId }) => {
-        throw new Error('not implemented');
-        // TODO  lore from lib/oracle/flavor.ts (flavor.json), hiddenTags from the registry
+        if (!turn.spend('effect')) return { ok: false, reason: 'already_open' };
+        const actions = effects.map(effectToAction);
+        for (const action of actions) {
+          if (action.type === 'GRANT_ITEM' && !turn.spend('grant')) {
+            return { ok: false, reason: 'not_in_contents' };
+          }
+        }
+        return turn.proposeAll(actions);
       },
     }),
   };

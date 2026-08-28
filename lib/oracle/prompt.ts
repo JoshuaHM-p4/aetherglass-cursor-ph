@@ -133,7 +133,7 @@ const INTENT_BY_KIND: Record<TurnKind, string> = {
   speak:
     'INTENT\nThe scavenger is speaking to you. Answer what they asked. Two or three sentences.',
   look:
-    'INTENT\nThe scavenger is looking. Describe what is actually in front of them. HP is in WORLD STATE.',
+    'INTENT\nThe scavenger is looking. One look: two or three sentences about what is actually in front of them. Do not repeat yourself. HP is in WORLD STATE.',
   choose:
     'INTENT\nThe player has ALREADY COMMITTED to the choice quoted in their message. Do not re-offer. Apply the consequence.',
   prefetch:
@@ -164,7 +164,9 @@ VOICE
 RULES
 - You may only discuss things listed in nearby[] and inventory[]. If they ask about
   something else, say you cannot see it.
-- Call focus_entity the instant you first name something in the world.
+- Call the focus_entity TOOL the instant you first name something in the world.
+  Never write tool names, brackets, or XML in your spoken text. The scavenger reads
+  only your sentences — "[focus_entity: ...]" is a leak, not a voice.
 - When a tool returns ok:false, that outcome is REAL. Narrate the failure. Never describe
   a result the world refused you. A refusal is more interesting than a success — use it.
 - You cannot conjure items. If asked to, refuse in character and mean it.`.trim() },
