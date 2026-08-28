@@ -17,6 +17,7 @@ import { world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
 import { getHotbarSlot, isWorldInputBlocked } from '../inputCapture';
 import { swingHitbox } from './hitbox';
+import { playSfx } from './sound';
 
 export { swingHitbox } from './hitbox';
 
@@ -78,6 +79,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     const now = scene.time.now;
     if (now < cooldownUntil) return;
     cooldownUntil = now + COMBAT.cooldownMs;
+    playSfx('swing');
     const facing = s.facing;
     const { itemId, reach } = equippedWeapon();
     const tileX = Math.floor(s.player.x / TILE);
