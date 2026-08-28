@@ -9,6 +9,7 @@
 
 'use client';
 
+import type { JSX } from 'react';
 import type { ChoiceRack as Rack } from '../../lib/client/useOracleTurn';
 
 export interface ChoiceRackProps {

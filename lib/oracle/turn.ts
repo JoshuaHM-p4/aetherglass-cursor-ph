@@ -11,8 +11,10 @@
 // commit. The fork's only outputs are (1) the tool results the model reads and (2) the
 // verdict stream. If the process died mid-turn the world would simply not have changed.
 
+import { z } from 'zod';
 import type { Action, ContextPacket, GameState, RejectReason } from '../sim/types';
-import type { PaneJournal } from './journal';
+import { buildContextPacket } from './context';
+import type { JournalKind, PaneJournal } from './journal';
 import type { OracleDataPart, TurnId, TurnKind, Verdict } from './protocol';
 
 /** Minimal shape of the `createUIMessageStream` writer we depend on. */
@@ -70,7 +72,77 @@ export function createTurnSim(args: {
   kind: TurnKind;
   writer: PartWriter;
 }): TurnSim {
-  throw new Error('not implemented');
+  const fork = structuredClone(args.snapshot);
+  const packet = buildContextPacket(fork, args.journal);
+  const recorded: Verdict[] = [];
+  const refuse: ProposalResult = { ok: false, reason: H3_REFUSE_REASON };
+  return {
+    turnId: args.turnId,
+    kind: args.kind,
+    packet,
+    journal: args.journal,
+    state: () => fork,
+    propose: () => refuse,
+    proposeAll: () => refuse,
+    spend: () => false,
+    verdicts: () => recorded,
+  };
+}
+
+const H3_REFUSE_REASON: RejectReason = 'wrong_kind';
+
+const TURN_KINDS = ['speak', 'look', 'choose', 'prefetch'] as const;
+const JOURNAL_KINDS = [
+  'offered', 'committed', 'refused', 'diverged', 'condition',
+] as const satisfies readonly JournalKind[];
+
+const journalEntrySchema = z.object({
+  turnId: z.string(),
+  kind: z.enum(JOURNAL_KINDS).optional(),
+  line: z.string(),
+});
+
+const snapshotSchema = z.object({
+  player: z.object({
+    hp: z.number(),
+    hpMax: z.number(),
+    paneIntegrity: z.number(),
+    tx: z.number(),
+    ty: z.number(),
+    facing: z.enum(['up', 'down', 'left', 'right']),
+    bag: z.array(z.unknown()),
+    hotbar: z.tuple([
+      z.string().nullable(),
+      z.string().nullable(),
+      z.string().nullable(),
+    ]),
+  }).passthrough(),
+  entities: z.record(z.string(), z.unknown()),
+  flags: z.record(z.string(), z.boolean()),
+  log: z.array(z.string()),
+  ui: z.object({
+    interactTargetId: z.string().nullable(),
+    paneOpen: z.boolean(),
+    bagOpen: z.boolean(),
+  }).passthrough(),
+}).passthrough();
+
+const oracleRequestSchema = z.object({
+  messages: z.array(z.unknown()),
+  snapshot: snapshotSchema,
+  journal: z.union([
+    z.array(journalEntrySchema),
+    z.object({ entries: z.array(journalEntrySchema) }),
+  ]),
+  turnId: z.string().min(1),
+  kind: z.enum(TURN_KINDS),
+  choiceId: z.string().optional(),
+});
+
+function badRequest(message: string): never {
+  const err = new Error(message) as Error & { status: number };
+  err.status = 400;
+  throw err;
 }
 
 /**
@@ -91,5 +163,23 @@ export function parseOracleRequest(body: unknown): {
   kind: TurnKind;
   choiceId?: string;
 } {
-  throw new Error('not implemented');
+  const parsed = oracleRequestSchema.safeParse(body);
+  if (!parsed.success) badRequest(parsed.error.message);
+  const journalEntries = Array.isArray(parsed.data.journal)
+    ? parsed.data.journal
+    : parsed.data.journal.entries;
+  return {
+    messages: parsed.data.messages,
+    snapshot: parsed.data.snapshot as GameState,
+    journal: {
+      entries: journalEntries.map(e => ({
+        turnId: e.turnId,
+        kind: e.kind ?? 'condition',
+        line: e.line,
+      })),
+    },
+    turnId: parsed.data.turnId,
+    kind: parsed.data.kind,
+    ...(parsed.data.choiceId !== undefined ? { choiceId: parsed.data.choiceId } : {}),
+  };
 }
