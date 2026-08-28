@@ -162,5 +162,5 @@ export interface Verdict {
 }
 
 export function verdictKey(v: Pick<Verdict, 'turnId' | 'seq'>): string {
-  throw new Error('not implemented');
+  return `${v.turnId}:${v.seq}`;
 }

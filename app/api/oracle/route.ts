@@ -11,7 +11,10 @@ import { anthropic } from '@ai-sdk/anthropic';
 import {
   convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse,
   stepCountIs, streamText,
+  type UIMessage,
 } from 'ai';
+import { buildSystemPrompt, pickModel } from '../../../lib/oracle/prompt';
+import { createTurnSim, parseOracleRequest } from '../../../lib/oracle/turn';
 
 export const maxDuration = 30;
 /** Node, not edge: `structuredClone` in the reducer and a static flavor.json import. */
@@ -26,28 +29,41 @@ export const runtime = 'nodejs';
  * beyond that is the model looping, and cutting it off is better than a 6-second turn.
  */
 export async function POST(req: Request) {
-  throw new Error('not implemented');
-  // TODO
-  //   const { messages, snapshot, journal, turnId, kind } = parseOracleRequest(await req.json());
-  //
-  //   const stream = createUIMessageStream({
-  //     execute: async ({ writer }) => {
-  //       const turn = createTurnSim({ snapshot, journal, turnId, kind, writer });
-  //       const { blocks, text: system } = buildSystemPrompt({ packet: turn.packet, journal, kind });
-  //
-  //       const result = streamText({
-  //         model: anthropic(pickModel(kind, turn.packet)),
-  //         system,                                  // stable prefix first; see prompt.ts
-  //         messages: await convertToModelMessages(messages),   // v6: async, await it
-  //         tools: buildTools(turn),
-  //         stopWhen: stepCountIs(4),
-  //         providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
-  //       });
-  //
-  //       writer.merge(result.toUIMessageStream());
-  //     },
-  //     onError: (e) => 'the glass has gone dark',   // in-character, never a stack trace
-  //   });
-  //
-  //   return createUIMessageStreamResponse({ stream });
+  let parsed: ReturnType<typeof parseOracleRequest>;
+  try {
+    parsed = parseOracleRequest(await req.json());
+  } catch (err) {
+    const status =
+      err instanceof Error && 'status' in err && typeof (err as { status: unknown }).status === 'number'
+        ? (err as { status: number }).status
+        : 400;
+    const message = err instanceof Error ? err.message : 'malformed oracle request';
+    return new Response(message, { status });
+  }
+
+  const { messages, snapshot, journal, turnId, kind } = parsed;
+
+  const stream = createUIMessageStream({
+    execute: async ({ writer }) => {
+      const turn = createTurnSim({ snapshot, journal, turnId, kind, writer });
+      const { text: system } = buildSystemPrompt({
+        packet: turn.packet,
+        journal,
+        kind,
+      });
+
+      const result = streamText({
+        model: anthropic(pickModel(kind, turn.packet)),
+        system,
+        messages: await convertToModelMessages(messages as UIMessage[]),
+        stopWhen: stepCountIs(4),
+        providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } },
+      });
+
+      writer.merge(result.toUIMessageStream());
+    },
+    onError: () => 'the glass has gone dark',
+  });
+
+  return createUIMessageStreamResponse({ stream });
 }

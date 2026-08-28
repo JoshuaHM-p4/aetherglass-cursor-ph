@@ -7,8 +7,12 @@
 // failure mode ("packet built from stale state"): the packet and the tools cannot
 // disagree because there is only one state object in the request.
 
+import { QUEST_FLAGS } from '../sim/rules';
+import { NEARBY_LIMIT, nearestEntities } from '../sim/select';
 import type { ContextPacket, GameState } from '../sim/types';
-import type { PaneJournal } from './journal';
+import { recentLines, type PaneJournal } from './journal';
+
+const PUBLIC_FLAGS = new Set<string>(QUEST_FLAGS);
 
 /**
  * Flat, small, regenerated every turn. Ids and tags carry the meaning; the model
@@ -19,16 +23,46 @@ import type { PaneJournal } from './journal';
  * two actors' memories meet, and it is a read, so neither can corrupt the other.
  */
 export function buildContextPacket(state: GameState, journal: PaneJournal): ContextPacket {
-  throw new Error('not implemented');
-  // TODO
-  //   nearby: nearestEntities(state, NEARBY_LIMIT).map(e => ({ ...projection, distance: e.d }))
-  //   recentEvents: interleave(state.log.slice(-5), recentLines(journal, 5))
-  //   flags: pickPublicFlags(state.flags)   // QUEST_FLAGS only; no debug flags
+  return {
+    player: {
+      hp: state.player.hp,
+      hpMax: state.player.hpMax,
+      paneIntegrity: state.player.paneIntegrity,
+      facing: state.player.facing,
+      position: { x: state.player.tx, y: state.player.ty },
+    },
+    inventory: state.player.bag.map(i => ({
+      id: i.id,
+      name: i.name,
+      tags: i.tags,
+      qty: i.qty,
+    })),
+    nearby: nearestEntities(state, NEARBY_LIMIT).map(e => ({
+      id: e.id,
+      kind: e.kind,
+      name: e.name,
+      state: e.state,
+      tags: e.tags,
+      distance: e.d,
+      ...(e.seed !== undefined ? { seed: e.seed } : {}),
+    })),
+    focus: state.ui.interactTargetId,
+    recentEvents: interleave(state.log.slice(-5), recentLines(journal, 5)),
+    flags: pickPublicFlags(state.flags),
+  };
+}
+
+function interleave(simTail: readonly string[], journalTail: readonly string[]): string[] {
+  return [...simTail, ...journalTail];
 }
 
 /** Only flags the model is allowed to know about. Everything else is engine bookkeeping. */
 export function pickPublicFlags(flags: Record<string, boolean>): Record<string, boolean> {
-  throw new Error('not implemented');
+  const out: Record<string, boolean> = {};
+  for (const [key, value] of Object.entries(flags)) {
+    if (PUBLIC_FLAGS.has(key)) out[key] = value;
+  }
+  return out;
 }
 
 /**

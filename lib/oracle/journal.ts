@@ -45,16 +45,19 @@ export interface PaneJournal {
 export const JOURNAL_CAP = 12;
 
 export function emptyJournal(): PaneJournal {
-  throw new Error('not implemented');
+  return { entries: [] };
 }
 
 export function record(journal: PaneJournal, entry: JournalEntry): PaneJournal {
-  throw new Error('not implemented');
+  const entries = [...journal.entries, entry];
+  return {
+    entries: entries.length > JOURNAL_CAP ? entries.slice(-JOURNAL_CAP) : entries,
+  };
 }
 
 /** The tail that goes into the packet, newest last. Merged with the sim log tail. */
 export function recentLines(journal: PaneJournal, n: number): string[] {
-  throw new Error('not implemented');
+  return journal.entries.slice(-n).map(e => e.line);
 }
 
 /**
@@ -63,5 +66,5 @@ export function recentLines(journal: PaneJournal, n: number): string[] {
  * so there is one source of truth for "this offer is spent".
  */
 export function isTurnCommitted(journal: PaneJournal, turnId: TurnId): boolean {
-  throw new Error('not implemented');
+  return journal.entries.some(e => e.kind === 'committed' && e.turnId === turnId);
 }

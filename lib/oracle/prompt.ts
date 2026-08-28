@@ -30,7 +30,7 @@
 // ===========================================================================
 
 import type { ContextPacket } from '../sim/types';
-import type { PaneJournal } from './journal';
+import { JOURNAL_CAP, recentLines, type PaneJournal } from './journal';
 import type { TurnKind } from './protocol';
 
 export interface PromptBlock {
@@ -74,7 +74,13 @@ export const VOICE_TIERS: readonly VoiceTier[] = [
 ];
 
 export function tierOf(paneIntegrity: number): VoiceTier {
-  throw new Error('not implemented');
+  let best = VOICE_TIERS[VOICE_TIERS.length - 1]!;
+  for (const tier of VOICE_TIERS) {
+    if (paneIntegrity >= tier.minIntegrity && tier.minIntegrity >= best.minIntegrity) {
+      best = tier;
+    }
+  }
+  return best;
 }
 
 /**
@@ -92,7 +98,52 @@ export function buildSystemPrompt(args: {
   journal: PaneJournal;
   kind: TurnKind;
 }): { blocks: PromptBlock[]; text: string; stablePrefixLength: number } {
-  throw new Error('not implemented');
+  const { packet, journal, kind } = args;
+  const tier = tierOf(packet.player.paneIntegrity);
+  const perTurn: PromptBlock[] = [
+    {
+      id: 'voice_tier',
+      stable: false,
+      text: tier.directives.join('\n'),
+    },
+    {
+      id: 'intent',
+      stable: false,
+      text: INTENT_BY_KIND[kind],
+    },
+    {
+      id: 'world_state',
+      stable: false,
+      text: `WORLD STATE\n${JSON.stringify(packet, null, 1)}`,
+    },
+    {
+      id: 'journal',
+      stable: false,
+      text: formatJournalBlock(journal),
+    },
+  ];
+  const blocks = [...STABLE_BLOCKS, ...perTurn];
+  const stableText = STABLE_BLOCKS.map(b => b.text).join('\n\n');
+  const volatileText = perTurn.map(b => b.text).filter(t => t.length > 0).join('\n\n');
+  const text = volatileText.length > 0 ? `${stableText}\n\n${volatileText}` : stableText;
+  return { blocks, text, stablePrefixLength: stableText.length };
+}
+
+const INTENT_BY_KIND: Record<TurnKind, string> = {
+  speak:
+    'INTENT\nThe scavenger is speaking to you. Answer what they asked. Two or three sentences.',
+  look:
+    'INTENT\nThe scavenger is looking. Describe what is actually in front of them. HP is in WORLD STATE.',
+  choose:
+    'INTENT\nThe player has ALREADY COMMITTED to the choice quoted in their message. Do not re-offer. Apply the consequence.',
+  prefetch:
+    'INTENT\nThis is a glance ahead. Describe what they are approaching. Do not start a conversation.',
+};
+
+function formatJournalBlock(journal: PaneJournal): string {
+  const lines = recentLines(journal, JOURNAL_CAP);
+  if (lines.length === 0) return 'JOURNAL\n(none)';
+  return `JOURNAL\n${lines.join('\n')}`;
 }
 
 /** The constant blocks, hoisted to module scope so they are literally the same string. */
@@ -133,5 +184,10 @@ HANDS
  * One expression, no UI, no settings (PRD §5 forbids a model picker).
  */
 export function pickModel(kind: TurnKind, packet: ContextPacket): string {
-  throw new Error('not implemented');
+  const eliteNearby = packet.nearby.some(e => e.kind === 'elite');
+  if (kind === 'speak' || kind === 'choose' || eliteNearby) return SONNET_ID;
+  return HAIKU_ID;
 }
+
+const SONNET_ID = 'claude-sonnet-4-6';
+const HAIKU_ID = 'claude-haiku-4-5';
