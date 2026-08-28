@@ -54,13 +54,43 @@ function bakeGlow(scene: Phaser.Scene): void {
   g.destroy();
 }
 
-/** Second walk frame: same sprite, one pixel down. Tiny Dungeon has no walk cycle. */
-function stampShifted(scene: Phaser.Scene, src: string, dest: string, dy: number): void {
+/** Tiny Dungeon has no walk cycle — stride by bobbing the body and swapping feet. */
+function stampWalkFrame(
+  scene: Phaser.Scene,
+  src: string,
+  dest: string,
+  bodyDy: number,
+  legDx: number,
+): void {
   const canvas = scene.textures.createCanvas(dest, 16, 16);
   if (!canvas) return;
-  canvas.context.imageSmoothingEnabled = false;
-  canvas.drawFrame(src, undefined, 0, dy);
+  const ctx = canvas.context;
+  ctx.imageSmoothingEnabled = false;
+  const img = scene.textures.get(src).getSourceImage() as CanvasImageSource;
+  const torso = 10;
+  ctx.drawImage(img, 0, 0, 16, torso, 0, bodyDy, 16, torso);
+  ctx.drawImage(img, 0, torso, 16, 16 - torso, legDx, torso + bodyDy, 16, 16 - torso);
   canvas.refresh();
+}
+
+function installPlayerWalk(scene: Phaser.Scene): void {
+  if (!scene.textures.exists('tex-player')) return;
+  stampWalkFrame(scene, 'tex-player', 'tex-player-step-l', 1, -1);
+  stampWalkFrame(scene, 'tex-player', 'tex-player-step-r', 1, 1);
+  if (!scene.textures.exists('tex-player-step-l') || !scene.textures.exists('tex-player-step-r')) {
+    return;
+  }
+  scene.anims.create({
+    key: 'player-walk',
+    frames: [
+      { key: 'tex-player' },
+      { key: 'tex-player-step-l' },
+      { key: 'tex-player' },
+      { key: 'tex-player-step-r' },
+    ],
+    frameRate: 10,
+    repeat: -1,
+  });
 }
 
 export class Preload extends Phaser.Scene {
@@ -90,20 +120,10 @@ export class Preload extends Phaser.Scene {
   }
 
   create(): void {
-    if (!this.textures.exists('tex-player')) {
-      bakeGrey(this);
-      this.scene.start('Overworld');
-      return;
-    }
+    if (!this.textures.exists('tex-player')) bakeGrey(this);
     bakeSpot(this);
     bakeGlow(this);
-    stampShifted(this, 'tex-player', 'tex-player-step', 1);
-    this.anims.create({
-      key: 'player-walk',
-      frames: [{ key: 'tex-player' }, { key: 'tex-player-step' }],
-      frameRate: 8,
-      repeat: -1,
-    });
+    installPlayerWalk(this);
     this.scene.start('Overworld');
   }
 }

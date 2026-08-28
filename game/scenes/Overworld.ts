@@ -28,6 +28,7 @@ import { DEAD_TINT, installCombatSystem } from '../systems/combat';
 import { installFocusSystem } from '../systems/focus';
 import { attachProximityRings, installProximitySystem } from '../systems/proximity';
 import { installSessionMarks } from '../systems/sessionMark';
+import { installSoundSystem } from '../systems/sound';
 
 export interface OverworldRefs {
   entityLayer: Phaser.GameObjects.Container;
@@ -124,6 +125,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   private teardownProximity: (() => void) | null = null;
   private teardownFocus: (() => void) | null = null;
   private teardownMarks: (() => void) | null = null;
+  private teardownSound: (() => void) | null = null;
 
   constructor() {
     super('Overworld');
@@ -180,6 +182,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownProximity = installProximitySystem(this);
     this.teardownFocus = installFocusSystem(this);
     this.teardownMarks = installSessionMarks(this);
+    this.teardownSound = installSoundSystem(this);
 
     this.unsubStore = gameStore.subscribe(() => {
       this.syncFromStore();
@@ -197,6 +200,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.syncAnchor();
     if (isWorldInputBlocked()) {
       this.player.setVelocity(0, 0);
+      this.haltWalk();
       return;
     }
     const left = this.cursors.left.isDown || this.wasd.A.isDown;
@@ -225,12 +229,8 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     if (facing === 'right') this.player.setFlipX(false);
     const moving = vx !== 0 || vy !== 0;
     if (moving) requestSessionDismiss();
-    if (moving && this.anims.exists('player-walk')) {
-      if (this.player.anims.currentAnim?.key !== 'player-walk') this.player.play('player-walk');
-    } else if (this.player.anims.isPlaying) {
-      this.player.anims.stop();
-      this.player.setTexture('tex-player');
-    }
+    if (moving) this.playWalk();
+    else this.haltWalk();
     if (facing) {
       this.facing = facing;
       const tx = Math.floor(this.player.x / TILE);
@@ -243,6 +243,17 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     }
   }
 
+  private playWalk(): void {
+    if (!this.anims.exists('player-walk')) return;
+    if (this.player.anims.currentAnim?.key === 'player-walk' && this.player.anims.isPlaying) return;
+    this.player.play('player-walk');
+  }
+
+  private haltWalk(): void {
+    if (this.player.anims.isPlaying) this.player.anims.stop();
+    if (this.player.texture.key !== 'tex-player') this.player.setTexture('tex-player');
+  }
+
   shutdown(): void {
     this.unsubStore?.();
     this.unsubHydrate?.();
@@ -250,12 +261,14 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownProximity?.();
     this.teardownFocus?.();
     this.teardownMarks?.();
+    this.teardownSound?.();
     this.unsubStore = null;
     this.unsubHydrate = null;
     this.teardownCombat = null;
     this.teardownProximity = null;
     this.teardownFocus = null;
     this.teardownMarks = null;
+    this.teardownSound = null;
     this.prev = null;
   }
 
