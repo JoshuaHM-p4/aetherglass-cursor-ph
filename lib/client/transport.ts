@@ -19,6 +19,7 @@
 import { DefaultChatTransport, type ChatTransport, type UIMessage } from 'ai';
 import type { PrefetchController } from './prefetch';
 import type { TurnKind } from '../oracle/protocol';
+import { pruneIncompleteToolParts } from '../oracle/messages';
 
 export interface OracleTransportDeps {
   prefetch: PrefetchController;
@@ -44,7 +45,7 @@ export function createOracleTransport(
       body: {
         kind: DEFAULT_TURN_KIND,
         ...body,
-        messages,
+        messages: pruneIncompleteToolParts(messages),
         snapshot: deps.snapshot(),
         journal: deps.journal(),
         turnId: deps.nextTurnId(),

@@ -18,6 +18,7 @@ import {
   buildSystemPrompt, pickModel, type OracleProvider,
 } from '../../../lib/oracle/prompt';
 import { createTurnSim, parseOracleRequest } from '../../../lib/oracle/turn';
+import { pruneIncompleteToolParts } from '../../../lib/oracle/messages';
 import { buildTools } from '../../../lib/oracle/tools';
 
 export const maxDuration = 30;
@@ -62,10 +63,25 @@ export async function POST(req: Request) {
       const modelId = pickModel(kind, turn.packet, provider);
 
       const glance = kind === 'look' || kind === 'prefetch';
+      let converted;
+      try {
+        converted = await convertToModelMessages(
+          pruneIncompleteToolParts(messages as UIMessage[]),
+          { ignoreIncompleteToolCalls: true },
+        );
+      } catch {
+        converted = await convertToModelMessages(
+          pruneIncompleteToolParts(messages as UIMessage[]).map((message) => ({
+            ...message,
+            parts: message.parts.filter((part) => part.type === 'text' || part.type === 'step-start'),
+          })),
+          { ignoreIncompleteToolCalls: true },
+        );
+      }
       const result = streamText({
         model: provider === 'anthropic' ? anthropic(modelId) : openai(modelId),
         system,
-        messages: await convertToModelMessages(messages as UIMessage[]),
+        messages: converted,
         tools: buildTools(turn),
         // toolChoice is sticky across steps. Forcing focus_entity at the top
         // level made every continuation call it again, then narrate again —

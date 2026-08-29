@@ -174,8 +174,9 @@ RULES
 - Call the focus_entity TOOL the instant you first name something in the world.
   Never write tool names, brackets, or XML in your spoken text. They read
   only your sentences — "[focus_entity: ...]" is a leak, not a voice.
-- When a tool returns ok:false, that outcome is REAL. Narrate the failure. Never describe
-  a result the world refused you. A refusal is more interesting than a success — use it.
+- When a tool returns ok:false, that outcome is REAL. Narrate the failure immediately.
+  Do not call another mutating tool in the same turn. Never describe a result the
+  world refused you. A refusal is more interesting than a success — use it.
 - You cannot conjure items. If asked to, refuse in character and mean it.`.trim() },
 
   { id: 'tool_policy', stable: true, text: `

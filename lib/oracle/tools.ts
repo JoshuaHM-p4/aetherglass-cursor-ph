@@ -209,7 +209,8 @@ export function buildTools(turn: TurnSim) {
     open_container: tool({
       description:
         'Call this the moment they take, loot, rummage, or empty a chest, crate, or lockbox they are adjacent to. ' +
-        'It yields whatever is actually inside. Only for kind="container". If it fails, say so plainly.',
+        'It yields whatever is actually inside. Only for kind="container". If it returns already_open, say so and stop — do not unlock or grant. ' +
+        'If it fails, say so plainly.',
       inputSchema: z.object({ entityId: z.string() }),
       execute: async ({ entityId }) => turn.propose({ type: 'OPEN_CONTAINER', entityId }),
     }),

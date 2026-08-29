@@ -176,9 +176,19 @@ export default function Pane(): JSX.Element {
                   />
                 )}
                 {thinking && onLatest && !current.pane && <ThinkingMark />}
+                {status === 'error' && onLatest && !current?.pane && (
+                  <p className="text-justify font-pixel text-[11px] leading-[1.65] text-amber-50/90">
+                    the glass has gone dark
+                  </p>
+                )}
               </div>
             )}
             {thinking && !current && <ThinkingMark />}
+            {status === 'error' && !current && (
+              <p className="text-justify font-pixel text-[11px] leading-[1.65] text-amber-50/90">
+                the glass has gone dark
+              </p>
+            )}
           </div>
           {pages.length > 1 && (
             <ol
