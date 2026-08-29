@@ -18,7 +18,6 @@ import {
   getActiveSessionId,
   getSession,
   putSession,
-  requestSessionDismiss,
   setActiveSessionId,
   setSessionDismissHandler,
   type StoredPaneSession,
@@ -144,6 +143,9 @@ export function useOracleTurn(): OracleTurnApi {
   const lastPaneId = useRef<string | null>(null);
   const recoveredFocus = useRef(new Set<string>());
   const streamOwnerRef = useRef<string | null>(null);
+  /** After the scripted wake, ignore the same Enter that would otherwise open an empty look. */
+  const muteInteractUntil = useRef(0);
+  const closeSessionRef = useRef<() => void>(() => {});
   const [, bump] = useState(0);
 
   const freezeRefusals = () => {
@@ -251,7 +253,25 @@ export function useOracleTurn(): OracleTurnApi {
     putSession(capture(id));
   };
 
+  closeSessionRef.current = () => {
+    const id = getActiveSessionId();
+    if (id) putSession(capture(id));
+    streamOwnerRef.current = null;
+    setActiveSessionId(null);
+    setActiveEntity(null);
+    setRack(null);
+    setMessagesRef.current([]);
+    journalRef.current = emptyJournal();
+    frozenRefusals.current = {};
+    liveRefusals.current = [];
+    setPaneTyping(false);
+    bus.emit('pane:focus_clear', {});
+    bus.emit('pane:awake', { open: false, reason: 'closed' });
+    bump((n) => n + 1);
+  };
+
   const lookAt = (entityId: string) => {
+    if (performance.now() < muteInteractUntil.current) return;
     const streaming =
       chatStatusRef.current === 'submitted' || chatStatusRef.current === 'streaming';
     const entity = world().entities[entityId];
@@ -350,11 +370,26 @@ export function useOracleTurn(): OracleTurnApi {
     setIntroLocked(true);
     const finish = () => {
       gameStore.getState().dispatch({ type: 'SET_FLAG', flag: 'intro_done', value: true }, 'keyboard');
+      // Dismiss used to no-op here: introBeatRef was still set because setState
+      // had not re-rendered. That left an empty AETHERGLASS pane on screen.
+      introBeatRef.current = null;
       setIntroBeat(null);
       setPaneTyping(false);
       bus.emit('pane:intro', { cue: 'done' });
-      requestSessionDismiss();
-      queueMicrotask(() => setIntroLocked(false));
+      muteInteractUntil.current = performance.now() + 450;
+      closeSessionRef.current();
+      let unlocked = false;
+      const unlock = () => {
+        if (unlocked) return;
+        unlocked = true;
+        window.removeEventListener('keyup', onEnterUp, true);
+        setIntroLocked(false);
+      };
+      const onEnterUp = (event: KeyboardEvent) => {
+        if (event.key === 'Enter') unlock();
+      };
+      window.addEventListener('keyup', onEnterUp, true);
+      window.setTimeout(unlock, 450);
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' || event.key === 'Tab') {
@@ -378,18 +413,7 @@ export function useOracleTurn(): OracleTurnApi {
   useEffect(() => {
     setSessionDismissHandler(() => {
       if (introBeatRef.current !== null) return;
-      const id = getActiveSessionId();
-      if (!id) return;
-      putSession(capture(id));
-      setActiveSessionId(null);
-      setActiveEntity(null);
-      setRack(null);
-      setMessagesRef.current([]);
-      journalRef.current = emptyJournal();
-      setPaneTyping(false);
-      bus.emit('pane:focus_clear', {});
-      bus.emit('pane:awake', { open: false, reason: 'closed' });
-      bump((n) => n + 1);
+      closeSessionRef.current();
     });
     return () => setSessionDismissHandler(null);
   }, []);

@@ -40,6 +40,10 @@ import { installHitboxDebug } from '../systems/hitboxDebug';
 import { installSlimeAi } from '../systems/ai/slime';
 import { installGhostAi } from '../systems/ai/ghost';
 import { installCrabAi } from '../systems/ai/crab';
+import { installSpiderAi } from '../systems/ai/spider';
+import { installBatAi } from '../systems/ai/bat';
+import { installCyclopsAi } from '../systems/ai/cyclops';
+import { installRatAi } from '../systems/ai/rat';
 
 export interface OverworldRefs {
   entityLayer: Phaser.GameObjects.Container;
@@ -88,6 +92,10 @@ function applyEntityState(sprite: Phaser.Physics.Arcade.Sprite, entity: Entity):
 function textureFor(entity: Entity, textures: Phaser.Textures.TextureManager): string {
   if (entity.tags.includes('ghost') && textures.exists('tex-ghost')) return 'tex-ghost';
   if (entity.tags.includes('crab') && textures.exists('tex-crab')) return 'tex-crab';
+  if (entity.tags.includes('spider') && textures.exists('tex-spider')) return 'tex-spider';
+  if (entity.tags.includes('bat') && textures.exists('tex-bat')) return 'tex-bat';
+  if (entity.tags.includes('cyclops') && textures.exists('tex-cyclops')) return 'tex-cyclops';
+  if (entity.tags.includes('rat') && textures.exists('tex-rat')) return 'tex-rat';
   if (entity.tags.includes('fountain') && textures.exists('tex-fountain')) return 'tex-fountain';
   if (entity.tags.includes('heart_container') && textures.exists('tex-heart')) return 'tex-heart';
   if (entity.kind === 'container') {
@@ -176,6 +184,10 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   private teardownSlime: (() => void) | null = null;
   private teardownGhost: (() => void) | null = null;
   private teardownCrab: (() => void) | null = null;
+  private teardownSpider: (() => void) | null = null;
+  private teardownBat: (() => void) | null = null;
+  private teardownCyclops: (() => void) | null = null;
+  private teardownRat: (() => void) | null = null;
   private teardownHitboxes: (() => void) | null = null;
   private teardownHint: (() => void) | null = null;
 
@@ -230,6 +242,10 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownSlime = installSlimeAi(this);
     this.teardownGhost = installGhostAi(this);
     this.teardownCrab = installCrabAi(this);
+    this.teardownSpider = installSpiderAi(this);
+    this.teardownBat = installBatAi(this);
+    this.teardownCyclops = installCyclopsAi(this);
+    this.teardownRat = installRatAi(this);
     this.teardownHitboxes = installHitboxDebug(this);
     this.teardownHint = installInteractHint(this);
 
@@ -429,6 +445,10 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownSlime?.();
     this.teardownGhost?.();
     this.teardownCrab?.();
+    this.teardownSpider?.();
+    this.teardownBat?.();
+    this.teardownCyclops?.();
+    this.teardownRat?.();
     this.teardownHitboxes?.();
     this.teardownHint?.();
     this.scale.off('resize', this.onResize, this);
@@ -472,12 +492,24 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       if (entity.kind === 'door') sizeDoorBody(sprite, entity.id);
       if (entity.tags.includes('pickup')) {
         body.checkCollision.none = true;
+      } else if (entity.tags.includes('bat')) {
+        body.checkCollision.none = true;
       } else {
         this.physics.add.collider(this.player, sprite);
       }
-      if (entity.tags.includes('slime') || entity.tags.includes('crab')) {
+      if (
+        entity.tags.includes('slime') ||
+        entity.tags.includes('crab') ||
+        entity.tags.includes('cyclops') ||
+        entity.tags.includes('rat') ||
+        entity.tags.includes('spider')
+      ) {
         this.physics.add.collider(sprite, this.walls);
         body.setImmovable(false);
+      }
+      if (entity.tags.includes('spider')) {
+        body.enable = false;
+        sprite.setAlpha(0);
       }
       this.entityLayer.add(sprite);
       applyEntityState(sprite, entity);

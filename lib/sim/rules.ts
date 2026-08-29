@@ -148,13 +148,14 @@ export const guards: Guards = {
   MOVE_ENTITY: (state, action) => {
     const entity = state.entities[action.entityId];
     if (!entity) return fail('no_such_entity');
-    if (!entity.tags.includes('ghost')) return fail('wrong_kind');
+    if (entity.kind !== 'enemy' && entity.kind !== 'elite') return fail('wrong_kind');
     if (entity.state === 'dead') return fail('already_dead');
     if (action.tx < 0 || action.tx >= ROOM_SIZE || action.ty < 0 || action.ty >= ROOM_SIZE) {
       return fail('not_nearby');
     }
     if (!state.dungeon.rooms[action.roomId]) return fail('no_such_entity');
     if (state.dungeon.rooms[action.roomId]?.kind === 'fountain') return fail('not_nearby');
+    if (action.roomId !== entity.roomId && !entity.tags.includes('ghost')) return fail('wrong_kind');
     return PASS;
   },
 
@@ -175,7 +176,7 @@ export const guards: Guards = {
   STRIKE_ENTITY: (state, action) => {
     const entity = state.entities[action.entityId];
     if (!entity) return fail('no_such_entity');
-    if (!inStrikeRange(state, action.entityId)) return fail('not_nearby');
+    if (!inStrikeRange(state, action.entityId, action.withItemId)) return fail('not_nearby');
     if (entity.kind !== 'enemy' && entity.kind !== 'elite') return fail('wrong_kind');
     if (entity.state === 'dead') return fail('already_dead');
     return PASS;

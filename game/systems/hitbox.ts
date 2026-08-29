@@ -25,6 +25,27 @@ export function swingReachPx(reachTiles: number): number {
   return TILE * Math.max(1, reachTiles) + SWING_CONE.tipPx;
 }
 
+/** How far a `bolt` travels, in pixels. No slash-tip padding. */
+export function boltRangePx(reachTiles: number): number {
+  return TILE * Math.max(1, reachTiles);
+}
+
+export const BOLT = {
+  radiusPx: 5,
+} as const;
+
+/** True when a bolt disk overlaps an enemy disk. */
+export function boltHits(
+  bx: number,
+  by: number,
+  ex: number,
+  ey: number,
+  boltRadiusPx: number = BOLT.radiusPx,
+  enemyRadiusPx: number = SWING_CONE.enemyRadiusPx,
+): boolean {
+  return Math.hypot(bx - ex, by - ey) <= boltRadiusPx + enemyRadiusPx;
+}
+
 /**
  * True when two equal `ACTOR_BODY` boxes are touching.
  * +1px so arcade separation (centres parked at body-size) still counts.
@@ -47,6 +68,7 @@ export function inSwingCone(
   facing: Facing,
   reachTiles: number,
   radiusPx: number = SWING_CONE.enemyRadiusPx,
+  halfAngle: number = SWING_CONE.halfAngle,
 ): boolean {
   const a = axis(facing);
   const dx = px - ox;
@@ -64,7 +86,7 @@ export function inSwingCone(
   if (dist < Math.max(1, SWING_CONE.innerPx - radiusPx)) return false;
   if (dist > swingReachPx(reachTiles) + radiusPx) return false;
   const dot = (qx * a.x + qy * a.y) / Math.max(dist, 0.001);
-  return dot >= Math.cos(SWING_CONE.halfAngle);
+  return dot >= Math.cos(halfAngle);
 }
 
 /** Tile-space AABB that contains the cone. Kept for debug / old callers. */

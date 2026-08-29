@@ -28,7 +28,7 @@ function easeOut(t: number): number {
   return 1 - u * u * u;
 }
 
-export function swingProgress(elapsedMs: number, durationMs = SWING_FX.durationMs): number {
+export function swingProgress(elapsedMs: number, durationMs: number = SWING_FX.durationMs): number {
   return clamp01(elapsedMs / durationMs);
 }
 

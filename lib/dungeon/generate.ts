@@ -172,6 +172,109 @@ function addSlime(state: GameState, roomId: string, rng: Rng, used: Set<string>)
   };
 }
 
+function addSpider(state: GameState, roomId: string, rng: Rng, used: Set<string>): void {
+  if (state.dungeon.rooms[roomId]?.kind === 'fountain') return;
+  const pos = randomInterior(rng, used);
+  if (!pos) return;
+  const n = Object.values(state.entities).filter((e) => e.tags.includes('spider') && e.roomId === roomId).length;
+  const id = `spider_${roomId}_${n}`;
+  state.entities[id] = {
+    id,
+    kind: 'enemy',
+    name: 'ceiling spider',
+    tags: ['spider'],
+    state: 'idle',
+    tx: pos.tx,
+    ty: pos.ty,
+    roomId,
+    hp: 2,
+    hpMax: 2,
+    seed: 'the floor-stain is not a stain',
+  };
+}
+
+const BAT_PACK_CAP = 3;
+
+function addBatPack(state: GameState, roomId: string, rng: Rng, used: Set<string>): void {
+  if (state.dungeon.rooms[roomId]?.kind === 'fountain') return;
+  const live = Object.values(state.entities).filter(
+    (e) => e.tags.includes('bat') && e.roomId === roomId && e.state !== 'dead',
+  ).length;
+  const want = Math.min(BAT_PACK_CAP - live, nextInt(rng, 2, 3));
+  for (let i = 0; i < want; i++) {
+    const pos = randomInterior(rng, used);
+    if (!pos) return;
+    const n = Object.values(state.entities).filter((e) => e.tags.includes('bat') && e.roomId === roomId).length;
+    const id = `bat_${roomId}_${n}`;
+    state.entities[id] = {
+      id,
+      kind: 'enemy',
+      name: 'cave bat',
+      tags: ['bat', 'ethereal'],
+      state: 'idle',
+      tx: pos.tx,
+      ty: pos.ty,
+      roomId,
+      hp: 2,
+      hpMax: 2,
+    };
+  }
+}
+
+const RAT_DROPS = ['torch_stub', 'mushroom_foul', 'ore_iron', 'potion_dim'] as const;
+
+function addRat(state: GameState, roomId: string, rng: Rng, used: Set<string>): void {
+  if (state.dungeon.rooms[roomId]?.kind === 'fountain') return;
+  const pos = randomInterior(rng, used);
+  if (!pos) return;
+  const n = Object.values(state.entities).filter((e) => e.tags.includes('rat') && e.roomId === roomId).length;
+  const id = `rat_${roomId}_${n}`;
+  const contents = chance(rng, 0.45) ? [pick(rng, RAT_DROPS)] : [];
+  state.entities[id] = {
+    id,
+    kind: 'enemy',
+    name: 'cave rat',
+    tags: ['rat', 'passive', 'drops'],
+    state: 'idle',
+    tx: pos.tx,
+    ty: pos.ty,
+    roomId,
+    hp: 1,
+    hpMax: 1,
+    contents,
+  };
+}
+
+function addCyclops(state: GameState, roomId: string, dir: Facing, used: Set<string>): void {
+  if (state.dungeon.rooms[roomId]?.kind !== 'cave') return;
+  const exit = EXIT_TILE[dir];
+  let tx = exit.tx;
+  let ty = exit.ty;
+  if (dir === 'up') ty = 2;
+  else if (dir === 'down') ty = ROOM_SIZE - 3;
+  else if (dir === 'left') tx = 2;
+  else tx = ROOM_SIZE - 3;
+  const key = `${tx},${ty}`;
+  if (used.has(key)) return;
+  used.add(key);
+  const id = `cyclops_${roomId}`;
+  if (state.entities[id]) return;
+  state.entities[id] = {
+    id,
+    kind: 'enemy',
+    name: 'door cyclops',
+    tags: ['cyclops', 'heavy'],
+    state: 'idle',
+    tx,
+    ty,
+    roomId,
+    hp: 8,
+    hpMax: 8,
+    paneWorthy: true,
+    seed: 'it keeps the master lock company',
+  };
+}
+
 function addGhost(state: GameState, roomId: string, rng: Rng, used: Set<string>): void {
   if (state.dungeon.rooms[roomId]?.kind === 'fountain') return;
   const pos = randomInterior(rng, used) ?? { tx: 6, ty: 6 };
@@ -301,8 +404,17 @@ function rollLoot(state: GameState, roomId: string, rng: Rng): void {
     const contents: string[] = [];
     if (heart) contents.push('heart_container');
     else {
-      const commons = ['torch_stub', 'mushroom_foul', 'ore_iron', 'potion_dim'] as const;
-      if (chance(rng, 0.55)) contents.push(pick(rng, commons));
+      const commons = [
+        'torch_stub',
+        'mushroom_foul',
+        'ore_iron',
+        'potion_dim',
+        'potion_red',
+        'wooden_sword',
+      ] as const;
+      const rares = ['axe', 'hammer', 'sword_short'] as const;
+      if (chance(rng, 0.1)) contents.push(pick(rng, rares));
+      else if (chance(rng, 0.55)) contents.push(pick(rng, commons));
     }
     addChest(state, roomId, rng, used, contents, chance(rng, 0.45));
   } else if (heart) {
@@ -310,6 +422,9 @@ function rollLoot(state: GameState, roomId: string, rng: Rng): void {
   }
 
   if (chance(rng, 0.5)) addSlime(state, roomId, rng, used);
+  if (chance(rng, 0.38)) addSpider(state, roomId, rng, used);
+  if (chance(rng, 0.32)) addBatPack(state, roomId, rng, used);
+  if (chance(rng, 0.28)) addRat(state, roomId, rng, used);
 
   if (!ghostExists(state) && chance(rng, 0.15)) addGhost(state, roomId, rng, used);
 
@@ -375,6 +490,8 @@ function generateCave(state: GameState, fromRoomId: string, travel: Facing, rng:
 
   rollLoot(state, id, rng);
   rollExtraExits(state, room, arrivedFrom, rng);
+  const masterDir = ALL_FACINGS.find((dir) => room.exits[dir]?.lock === 'master');
+  if (masterDir) addCyclops(state, id, masterDir, occupiedTiles(state, id));
   if (state.dungeon.caveCount >= state.dungeon.cap) closeDanglingOpens(state);
   return room;
 }

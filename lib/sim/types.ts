@@ -17,9 +17,10 @@
  */
 export type ItemTag =
   | 'pry' | 'sharp' | 'blunt' | 'burning' | 'arcane' | 'foul'
-  | 'key' | 'master_key' | 'fragile' | 'heavy' | 'edible' | 'reagent' | 'light';
+  | 'key' | 'master_key' | 'fragile' | 'heavy' | 'edible' | 'reagent' | 'light'
+  | 'block' | 'haste' | 'ward' | 'bolt';
 
-export type ItemKind = 'weapon' | 'tool' | 'consumable' | 'material' | 'key' | 'relic';
+export type ItemKind = 'weapon' | 'tool' | 'consumable' | 'material' | 'key' | 'relic' | 'shield';
 
 export interface Item {
   id: string;                 // snake_case, unique, exists in the registry
@@ -29,7 +30,15 @@ export interface Item {
   qty: number;
   stackable: boolean;
   loreKey?: string;           // -> public/assets/flavor.json
-  stats?: { damage?: number; reach?: number; heal?: number };
+  stats?: {
+    damage?: number;
+    reach?: number;
+    heal?: number;
+    cooldownMs?: number;
+    swingMs?: number;
+    cone?: number;
+    knock?: number;
+  };
 }
 
 // ---------------------------------------------------------------- entities

@@ -8,6 +8,19 @@ import { ensureLookWalk, preloadLooks } from '../systems/playerLook';
 
 const TILE = '/assets/tiles/tiny-dungeon';
 
+const WIELD_IDS = [
+  'wooden_sword',
+  'sword_short',
+  'saber',
+  'knife',
+  'hammer',
+  'axe',
+  'staff',
+  'pole',
+  'shield_wood',
+  'shield_iron',
+] as const;
+
 function tile(n: number): string {
   return `${TILE}/tile_${String(n).padStart(4, '0')}.png`;
 }
@@ -169,6 +182,41 @@ function bakeSpark(scene: Phaser.Scene): void {
   canvas.refresh();
 }
 
+function bakeBolt(scene: Phaser.Scene): void {
+  const canvas = scene.textures.createCanvas('tex-bolt', 8, 8);
+  if (!canvas) return;
+  const ctx = canvas.context;
+  const img = ctx.createImageData(8, 8);
+  const d = img.data;
+  const put = (x: number, y: number, r: number, g: number, b: number, a: number) => {
+    const i = (y * 8 + x) * 4;
+    d[i] = r;
+    d[i + 1] = g;
+    d[i + 2] = b;
+    d[i + 3] = a;
+  };
+  put(3, 1, 209, 118, 208, 220);
+  put(4, 1, 209, 118, 208, 220);
+  put(2, 2, 155, 76, 163, 255);
+  put(3, 2, 255, 255, 255, 255);
+  put(4, 2, 255, 244, 192, 255);
+  put(5, 2, 155, 76, 163, 255);
+  put(1, 3, 209, 118, 208, 200);
+  put(2, 3, 255, 244, 192, 255);
+  put(3, 3, 255, 255, 255, 255);
+  put(4, 3, 255, 255, 255, 255);
+  put(5, 3, 255, 244, 192, 255);
+  put(6, 3, 209, 118, 208, 200);
+  put(2, 4, 155, 76, 163, 255);
+  put(3, 4, 255, 244, 192, 255);
+  put(4, 4, 255, 255, 255, 255);
+  put(5, 4, 155, 76, 163, 255);
+  put(3, 5, 209, 118, 208, 220);
+  put(4, 5, 209, 118, 208, 220);
+  ctx.putImageData(img, 0, 0);
+  canvas.refresh();
+}
+
 function bakeGlow(scene: Phaser.Scene): void {
   const g = scene.make.graphics({ x: 0, y: 0 });
   g.fillStyle(0xffb060, 0.45);
@@ -206,9 +254,16 @@ export class Preload extends Phaser.Scene {
     this.load.image('tex-torch', tile(130));
     this.load.image('tex-ghost', tile(121));
     this.load.image('tex-crab', tile(110));
+    this.load.image('tex-spider', tile(120));
+    this.load.image('tex-bat', tile(122));
+    this.load.image('tex-cyclops', tile(111));
+    this.load.image('tex-rat', tile(123));
     this.load.image('tex-fountain', tile(56));
     this.load.image('tex-heart', '/assets/items/heart_container.png');
     this.load.image('tex-item-sword', '/assets/items/sword_short.png');
+    for (const id of WIELD_IDS) {
+      this.load.image(`tex-item-${id}`, `/assets/items/${id}.png`);
+    }
     this.load.audio('mus-fountain', '/assets/music/fairy_fountain.mp3');
     this.load.audio('mus-cave', '/assets/music/cave.mp3');
     this.load.audio('mus-boss', '/assets/music/dungeon_boss.mp3');
@@ -218,12 +273,20 @@ export class Preload extends Phaser.Scene {
     if (!this.textures.exists('tex-player')) bakeGrey(this);
     if (!this.textures.exists('tex-ghost')) bake(this, 'tex-ghost', 0xc5d0dc, 0x8aa0b4);
     if (!this.textures.exists('tex-crab')) bake(this, 'tex-crab', 0xb85c38, 0x6e2c12);
+    if (!this.textures.exists('tex-spider')) bake(this, 'tex-spider', 0x4a3a38, 0x2a2020);
+    if (!this.textures.exists('tex-bat')) bake(this, 'tex-bat', 0x5a4038, 0x3a2824);
+    if (!this.textures.exists('tex-cyclops')) bake(this, 'tex-cyclops', 0x8a5a3a, 0xc9a86a);
+    if (!this.textures.exists('tex-rat')) bake(this, 'tex-rat', 0x7a5a48, 0x4a3028);
     if (!this.textures.exists('tex-fountain')) bake(this, 'tex-fountain', 0x5a8cff, 0xc9a86a);
     bakeSpot(this);
     bakeGlow(this);
     if (!bakeKeyed(this, 'tex-item-sword', 'tex-sword')) bakeFallbackSword(this);
+    for (const id of WIELD_IDS) {
+      bakeKeyed(this, `tex-item-${id}`, `tex-wield-${id}`);
+    }
     bakeSlash(this);
     bakeSpark(this);
+    bakeBolt(this);
     ensureLookWalk(this, 'wanderer');
     this.scene.start('Overworld');
   }

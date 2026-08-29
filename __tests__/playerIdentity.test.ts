@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sanitizePlayerName } from '../lib/client/playerName';
 import { APPEARANCES, appearanceOf, isAppearanceId } from '../lib/sim/appearances';
+import { kitFor, kitLine } from '../lib/sim/kits';
 import { initialState } from '../lib/sim/reducer';
 
 describe('player identity', () => {
@@ -28,5 +29,21 @@ describe('player identity', () => {
     expect(sanitizePlayerName('  ash   walker  ')).toBe('ash walker');
     expect(sanitizePlayerName('abcdefghijklmnop')).toBe('abcdefghijkl');
     expect(sanitizePlayerName('   ')).toBe('');
+  });
+
+  it('kitFor assigns each look a starting kit', () => {
+    expect(kitFor('wanderer').itemIds).toEqual(['wooden_sword']);
+    expect(kitFor('mage').itemIds).toEqual(['staff']);
+    expect(kitFor('violet').itemIds).toEqual(['hammer']);
+    expect(kitFor('wright').itemIds).toEqual(['axe']);
+    expect(kitFor('squire').itemIds).toEqual(['pole', 'shield_wood']);
+    expect(kitFor('hood').itemIds).toEqual(['knife']);
+    expect(kitLine('squire')).toBe('squire · pole + wooden shield');
+  });
+
+  it('initialState bag is the wanderer wooden sword', () => {
+    const state = initialState();
+    expect(state.player.bag.map((item) => item.id)).toEqual(['wooden_sword']);
+    expect(state.player.hotbar).toEqual(['wooden_sword', null, null]);
   });
 });

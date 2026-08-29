@@ -219,4 +219,34 @@ describe('dungeon generation', () => {
     expect(result.state.player.bag.find((i) => i.id === 'key')).toBeUndefined();
     expect(result.state.entities[door.id]?.locked).toBe(false);
   });
+
+  it('never packs more than three bats in one room', () => {
+    for (let seed = 1; seed <= 24; seed++) {
+      const state = explore(seed, 28);
+      const byRoom = new Map<string, number>();
+      for (const entity of Object.values(state.entities)) {
+        if (!entity.tags.includes('bat') || entity.state === 'dead') continue;
+        byRoom.set(entity.roomId, (byRoom.get(entity.roomId) ?? 0) + 1);
+      }
+      for (const [roomId, n] of byRoom) {
+        expect(n, `seed ${seed} ${roomId}`).toBeLessThanOrEqual(3);
+      }
+    }
+  });
+
+  it('places a cyclops only in front of the master door', () => {
+    let found = false;
+    for (let seed = 1; seed <= 48; seed++) {
+      const state = explore(seed, 40);
+      const cyclops = Object.values(state.entities).filter((e) => e.tags.includes('cyclops'));
+      const masterRoom = state.dungeon.masterDoorRoomId;
+      for (const foe of cyclops) {
+        found = true;
+        expect(foe.roomId).toBe(masterRoom);
+        expect(state.dungeon.rooms[foe.roomId]?.kind).toBe('cave');
+      }
+      if (found) break;
+    }
+    expect(found).toBe(true);
+  });
 });

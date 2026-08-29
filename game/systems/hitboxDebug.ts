@@ -7,7 +7,7 @@ import { world } from '../../lib/sim/store';
 import { ACTOR_BODY } from '../const';
 import { isHitboxDebug } from '../hitboxDebug';
 import { getHotbarSlot } from '../inputCapture';
-import { SWING_CONE, swingReachPx } from './hitbox';
+import { boltRangePx, SWING_CONE, swingReachPx } from './hitbox';
 
 const PLAYER = 0x5dff8a;
 const FOE = 0xff4a5a;
@@ -73,9 +73,10 @@ function drawCone(
   oy: number,
   facing: Facing,
   reachTiles: number,
+  halfAngle: number = SWING_CONE.halfAngle,
 ): void {
   const mid = facingRad(facing);
-  const half = SWING_CONE.halfAngle;
+  const half = halfAngle;
   const inner = SWING_CONE.innerPx;
   const outer = swingReachPx(reachTiles);
   const start = mid - half;
@@ -91,11 +92,28 @@ function drawCone(
   g.lineBetween(ox + Math.cos(end) * inner, oy + Math.sin(end) * inner, ox + Math.cos(end) * outer, oy + Math.sin(end) * outer);
 }
 
-function equippedReach(): number {
+function drawBoltRange(
+  g: Phaser.GameObjects.Graphics,
+  ox: number,
+  oy: number,
+  facing: Facing,
+  reachTiles: number,
+): void {
+  const mid = facingRad(facing);
+  const outer = boltRangePx(reachTiles);
+  g.lineStyle(1, CONE, 0.7);
+  g.lineBetween(ox, oy, ox + Math.cos(mid) * outer, oy + Math.sin(mid) * outer);
+}
+
+function equippedSwing(): { reach: number; cone: number; bolt: boolean } {
   const { player } = world();
   const itemId = player.hotbar[getHotbarSlot()];
   const item = itemId ? player.bag.find((i) => i.id === itemId) : undefined;
-  return item?.stats?.reach ?? 1;
+  return {
+    reach: item?.stats?.reach ?? 1,
+    cone: item?.stats?.cone ?? SWING_CONE.halfAngle,
+    bolt: Boolean(item?.tags.includes('bolt')),
+  };
 }
 
 export function installHitboxDebug(scene: Phaser.Scene): () => void {
@@ -106,7 +124,9 @@ export function installHitboxDebug(scene: Phaser.Scene): () => void {
     g.clear();
     if (!isHitboxDebug()) return;
     drawActor(g, s.player, PLAYER);
-    drawCone(g, s.player.x, s.player.y, s.facing, equippedReach());
+    const swing = equippedSwing();
+    if (swing.bolt) drawBoltRange(g, s.player.x, s.player.y, s.facing, swing.reach);
+    else drawCone(g, s.player.x, s.player.y, s.facing, swing.reach, swing.cone);
     for (const obj of s.entityLayer.list) {
       const sprite = obj as Phaser.Physics.Arcade.Sprite;
       const entity = world().entities[sprite.name];

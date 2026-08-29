@@ -15,6 +15,7 @@ import {
   type SlotIndex,
 } from '../../lib/client/save';
 import { APPEARANCES, appearanceTileSrc, DEFAULT_APPEARANCE, type AppearanceId } from '../../lib/sim/appearances';
+import { applyKit, kitLine } from '../../lib/sim/kits';
 import { initialState } from '../../lib/sim/reducer';
 import { gameStore } from '../../lib/sim/store';
 import type { GameState } from '../../lib/sim/types';
@@ -378,7 +379,7 @@ function CreateView({
         />
       </label>
       <p className="mb-2 font-pixel text-[9px] tracking-[0.28em] text-amber-200/80">LOOK</p>
-      <div className="mb-4 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+      <div className="mb-1.5 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
         {APPEARANCES.map((appearance) => {
           const selected = look === appearance.id;
           return (
@@ -409,6 +410,7 @@ function CreateView({
           );
         })}
       </div>
+      <p className="mb-4 font-pixel text-[7px] tracking-wide text-amber-100/45">{kitLine(look)}</p>
       <div className="flex flex-col gap-1.5">
         <button
           type="button"
@@ -441,6 +443,7 @@ function beginNewGame(index: SlotIndex, name: string, appearance: AppearanceId):
   const state = initialState((Math.random() * 0xffffffff) >>> 0);
   state.player.name = name;
   state.player.appearance = appearance;
+  applyKit(state, appearance);
   setActiveSlot(index);
   gameStore.getState().hydrate(state);
   setPlaying(true);

@@ -16,11 +16,13 @@
 
 import { ARRIVAL_TILE, CRAB_ID, FOUNTAIN_ROOM_ID, FOUNTAIN_SPAWN, facingFromDoorId } from '../dungeon/const';
 import { bootFountain, ensureNeighbor } from '../dungeon/generate';
+import { DEFAULT_APPEARANCE } from './appearances';
+import { applyKit } from './kits';
 import { recipe } from './recipes';
-import { instantiate } from './registry';
+import { instantiate, isKnownItem } from './registry';
 import { check, LIMITS, QUEST_FLAGS } from './rules';
-import { findItem } from './select';
-import type { Action, ActionResult, GameState, Item, SimEvent } from './types';
+import { bagHasRoomFor, findItem } from './select';
+import type { Action, ActionResult, GameState, SimEvent } from './types';
 
 /**
  * Validate, then apply. Never throws. On rejection returns the *same state object*
@@ -199,6 +201,15 @@ function commit(state: GameState, action: Action): SimEvent[] {
       if (entity.hp <= 0) {
         entity.state = 'dead';
         events.push({ type: 'entity_state_changed', entityId: entity.id, state: 'dead' });
+        if (entity.tags.includes('drops')) {
+          const loot = entity.contents ?? [];
+          entity.contents = [];
+          for (const itemId of loot) {
+            if (!isKnownItem(itemId)) continue;
+            if (!bagHasRoomFor(state, itemId)) continue;
+            events.push(...grant(state, itemId, 1));
+          }
+        }
         if (entity.id === CRAB_ID) {
           state.flags.boss_dead = true;
           events.push({ type: 'flag_set', flag: 'boss_dead', value: true });
@@ -300,8 +311,7 @@ export const DEFAULT_SEED = 0xa37e11;
 
 export function initialState(seed: number = DEFAULT_SEED): GameState {
   const boot = bootFountain(seed);
-  const sword: Item = instantiate('sword_short');
-  return {
+  const state: GameState = {
     player: {
       hp: 6,
       hpMax: 6,
@@ -310,10 +320,10 @@ export function initialState(seed: number = DEFAULT_SEED): GameState {
       tx: boot.player.tx,
       ty: boot.player.ty,
       facing: 'down',
-      bag: [sword],
-      hotbar: ['sword_short', null, null],
+      bag: [],
+      hotbar: [null, null, null],
       name: 'wanderer',
-      appearance: 'wanderer',
+      appearance: DEFAULT_APPEARANCE,
     },
     dungeon: boot.dungeon,
     entities: boot.entities,
@@ -321,4 +331,6 @@ export function initialState(seed: number = DEFAULT_SEED): GameState {
     log: [],
     ui: { interactTargetId: null, paneOpen: false, bagOpen: false },
   };
+  applyKit(state, DEFAULT_APPEARANCE);
+  return state;
 }

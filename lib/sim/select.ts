@@ -31,6 +31,8 @@ export const NEARBY_LIMIT = 8;
 export const REACH_TILES = 1;
 /** Blade cone can cover ~3 tiles; sim strike uses this, not REACH_TILES. */
 export const STRIKE_TILES = 3;
+/** Pixel overlap + spawn offset can sit a couple tiles past a bolt's `reach`. */
+const BOLT_STRIKE_PAD = 2;
 
 export interface RankedEntity extends Entity {
   /** Chebyshev distance in tiles from the player. */
@@ -69,9 +71,19 @@ export function isAdjacent(state: GameState, entityId: string): boolean {
   return distanceTo(state, entityId) <= REACH_TILES;
 }
 
-/** True when a swing could legally connect. Wider than interact reach (the cone). */
-export function inStrikeRange(state: GameState, entityId: string): boolean {
-  return distanceTo(state, entityId) <= STRIKE_TILES;
+/** True when a swing or bolt could legally connect. Phaser already resolved the hit. */
+export function inStrikeRange(
+  state: GameState,
+  entityId: string,
+  withItemId: string | null = null,
+): boolean {
+  const d = distanceTo(state, entityId);
+  const item = withItemId ? findItem(state, withItemId) : undefined;
+  if (item?.tags.includes('bolt')) {
+    const reach = item.stats?.reach ?? STRIKE_TILES;
+    return d <= reach + BOLT_STRIKE_PAD;
+  }
+  return d <= STRIKE_TILES;
 }
 
 /** The bag entry for an id, or undefined. Stacks are one entry with qty > 1. */

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { inEnemyContact, inSwingCone } from '../game/systems/hitbox';
+import { boltHits, boltRangePx, inEnemyContact, inSwingCone } from '../game/systems/hitbox';
+import { contactDamage } from '../game/systems/foeContact';
 import { hurtShakeOffset } from '../game/systems/hurtFx';
 import { slashAlpha, swingAngle, swingLunge, swingProgress } from '../game/systems/swingFx';
 import { dirFromTo, facingDir, knockSpeedAt } from '../game/systems/knockback';
@@ -30,6 +31,11 @@ describe('inSwingCone', () => {
     expect(inSwingCone(ox, oy, ox + 8, oy + 20, 'right', 1, 0)).toBe(false);
     expect(inSwingCone(ox, oy, ox + 8, oy + 20, 'right', 1)).toBe(true);
   });
+
+  it('respects a passed narrow or wide half-angle', () => {
+    expect(inSwingCone(ox, oy, ox + 20, oy + 18, 'right', 1, 0, 0.5)).toBe(false);
+    expect(inSwingCone(ox, oy, ox + 20, oy + 18, 'right', 1, 0, 1.4)).toBe(true);
+  });
 });
 
 describe('inEnemyContact', () => {
@@ -45,6 +51,19 @@ describe('inEnemyContact', () => {
     expect(inEnemyContact(px, py, px + 8, py)).toBe(false);
     expect(inEnemyContact(px, py, px + 12, py)).toBe(false);
     expect(inEnemyContact(px, py, px + 16, py)).toBe(false);
+  });
+});
+
+describe('staff bolt', () => {
+  it('travels reach tiles with no slash-tip padding', () => {
+    expect(boltRangePx(6)).toBe(96);
+    expect(boltRangePx(1)).toBe(16);
+  });
+
+  it('hits when the bolt disk overlaps the foe', () => {
+    expect(boltHits(80, 80, 80, 80)).toBe(true);
+    expect(boltHits(80, 80, 90, 80)).toBe(true);
+    expect(boltHits(80, 80, 120, 80)).toBe(false);
   });
 });
 
@@ -117,5 +136,15 @@ describe('knockback', () => {
     expect(knockSpeedAt(0, 180, 200)).toBe(200);
     expect(knockSpeedAt(90, 180, 200)).toBe(100);
     expect(knockSpeedAt(180, 180, 200)).toBe(0);
+  });
+});
+
+describe('contactDamage', () => {
+  it('is a half-heart for common biters and nothing for rats or cyclops', () => {
+    expect(contactDamage({ tags: ['slime'] })).toBe(1);
+    expect(contactDamage({ tags: ['spider'] })).toBe(1);
+    expect(contactDamage({ tags: ['bat', 'ethereal'] })).toBe(1);
+    expect(contactDamage({ tags: ['rat', 'passive', 'drops'] })).toBeNull();
+    expect(contactDamage({ tags: ['cyclops', 'heavy'] })).toBeNull();
   });
 });

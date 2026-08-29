@@ -29,6 +29,7 @@
 import { createStore } from 'zustand/vanilla';
 import { bus } from '../../game/EventBus';
 import { writeSave } from '../client/save';
+import { applyKit } from './kits';
 import { applyAction, initialState } from './reducer';
 import { check } from './rules';
 import type {
@@ -167,6 +168,7 @@ export const gameStore = createStore<GameStore>((set, get) => {
       const fresh = initialState((Math.random() * 0xffffffff) >>> 0);
       fresh.player.name = name;
       fresh.player.appearance = appearance;
+      applyKit(fresh, appearance);
       get().hydrate(fresh);
     },
     setInteractTarget(entityId) {
