@@ -206,7 +206,10 @@ function commit(state: GameState, action: Action): SimEvent[] {
           entity.contents = [];
           for (const itemId of loot) {
             if (!isKnownItem(itemId)) continue;
-            if (!bagHasRoomFor(state, itemId)) continue;
+            if (!bagHasRoomFor(state, itemId)) {
+              events.push({ type: 'item_left_behind', itemId });
+              continue;
+            }
             events.push(...grant(state, itemId, 1));
           }
         }
@@ -231,6 +234,28 @@ function commit(state: GameState, action: Action): SimEvent[] {
       bag[action.a] = bag[action.b]!;
       bag[action.b] = tmp;
       return [];
+    }
+    case 'TRASH_ITEM': {
+      const [item] = state.player.bag.splice(action.index, 1);
+      if (!item) return [];
+      if (!findItem(state, item.id)) {
+        state.player.hotbar = state.player.hotbar.map((id) =>
+          id === item.id ? null : id,
+        ) as typeof state.player.hotbar;
+      }
+      state.player.trash = item;
+      return [{ type: 'item_lost', itemId: item.id }];
+    }
+    case 'TAKE_TRASH': {
+      const item = state.player.trash!;
+      state.player.trash = null;
+      const existing = findItem(state, item.id);
+      if (existing?.stackable) {
+        existing.qty += item.qty;
+      } else {
+        state.player.bag.push(item);
+      }
+      return [{ type: 'item_gained', itemId: item.id }];
     }
     case 'ENTER_PASSAGE': {
       const dest = ensureNeighbor(state, state.player.roomId, action.dir);
@@ -279,6 +304,8 @@ export function describeEvent(state: GameState, event: SimEvent): string {
       return `gained ${event.itemId}`;
     case 'item_lost':
       return `lost ${event.itemId}`;
+    case 'item_left_behind':
+      return `left behind ${event.itemId} (bag full)`;
     case 'damaged':
       return `took ${event.amount} damage from the ${event.source}`;
     case 'healed':
@@ -322,6 +349,7 @@ export function initialState(seed: number = DEFAULT_SEED): GameState {
       facing: 'down',
       bag: [],
       hotbar: [null, null, null],
+      trash: null,
       name: 'wanderer',
       appearance: DEFAULT_APPEARANCE,
     },

@@ -45,5 +45,6 @@ describe('player identity', () => {
     const state = initialState();
     expect(state.player.bag.map((item) => item.id)).toEqual(['wooden_sword']);
     expect(state.player.hotbar).toEqual(['wooden_sword', null, null]);
+    expect(state.player.trash).toBeNull();
   });
 });

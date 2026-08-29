@@ -125,6 +125,49 @@ describe('sim failure modes', () => {
     expect(result.state.player.bag.map((item) => item.id)).toEqual(['crowbar', 'wooden_sword']);
   });
 
+  it('TRASH_ITEM parks a stack on the can and TAKE_TRASH returns it', () => {
+    const state = initialState();
+    state.player.bag.push(instantiate('crowbar'));
+    const dumped = applyAction(state, { type: 'TRASH_ITEM', index: 1 });
+    expect(dumped.ok).toBe(true);
+    expect(dumped.state.player.bag.map((item) => item.id)).toEqual(['wooden_sword']);
+    expect(dumped.state.player.trash?.id).toBe('crowbar');
+    const taken = applyAction(dumped.state, { type: 'TAKE_TRASH' });
+    expect(taken.ok).toBe(true);
+    expect(taken.state.player.trash).toBeNull();
+    expect(taken.state.player.bag.map((item) => item.id)).toEqual(['wooden_sword', 'crowbar']);
+  });
+
+  it('TRASH_ITEM overwrites the previous throw and clears a matching hotbar slot', () => {
+    const state = initialState();
+    state.player.bag.push(instantiate('crowbar'));
+    const first = applyAction(state, { type: 'TRASH_ITEM', index: 0 });
+    expect(first.state.player.hotbar).toEqual([null, null, null]);
+    const second = applyAction(first.state, { type: 'TRASH_ITEM', index: 0 });
+    expect(second.ok).toBe(true);
+    expect(second.state.player.bag).toEqual([]);
+    expect(second.state.player.trash?.id).toBe('crowbar');
+  });
+
+  it('TAKE_TRASH into a full bag → bag_full', () => {
+    const state = initialState();
+    state.player.trash = instantiate('crowbar');
+    while (state.player.bag.length < BAG_SLOTS) {
+      state.player.bag.push(instantiate('ore_iron'));
+    }
+    const result = applyAction(state, { type: 'TAKE_TRASH' });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('bag_full');
+    expect(result.state.player.trash?.id).toBe('crowbar');
+  });
+
+  it('TRASH_ITEM with a bad index → no_such_item', () => {
+    const state = initialState();
+    const result = applyAction(state, { type: 'TRASH_ITEM', index: 4 });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('no_such_item');
+  });
+
   it('CONSUME_ITEM clears matching hotbar refs', () => {
     const state = initialState();
     const result = applyAction(state, { type: 'CONSUME_ITEM', itemId: 'wooden_sword' });
@@ -338,6 +381,35 @@ describe('enemy drops', () => {
     expect(result.state.entities.rat_test.state).toBe('dead');
     expect(result.events).toContainEqual({ type: 'item_gained', itemId: 'ore_iron' });
     expect(result.state.player.bag.some((item) => item.id === 'ore_iron')).toBe(true);
+  });
+
+  it('killing a rat with a full bag leaves the drop behind', () => {
+    const state = initialState();
+    while (state.player.bag.length < BAG_SLOTS) {
+      state.player.bag.push(instantiate('crowbar'));
+    }
+    state.entities.rat_test = {
+      id: 'rat_test',
+      kind: 'enemy',
+      name: 'cave rat',
+      tags: ['rat', 'passive', 'drops'],
+      state: 'idle',
+      tx: state.player.tx + 1,
+      ty: state.player.ty,
+      roomId: state.player.roomId,
+      hp: 1,
+      hpMax: 1,
+      contents: ['ore_iron'],
+    };
+    const result = applyAction(state, {
+      type: 'STRIKE_ENTITY',
+      entityId: 'rat_test',
+      amount: 1,
+      withItemId: null,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.events).toContainEqual({ type: 'item_left_behind', itemId: 'ore_iron' });
+    expect(result.state.player.bag.some((item) => item.id === 'ore_iron')).toBe(false);
   });
 
   it('killing a cyclops grants its potion', () => {

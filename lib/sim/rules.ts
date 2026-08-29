@@ -195,6 +195,18 @@ export const guards: Guards = {
     if (action.a < 0 || action.b < 0 || action.a >= n || action.b >= n) return fail('no_such_item');
     return PASS;
   },
+
+  TRASH_ITEM: (state, action) => {
+    if (action.index < 0 || action.index >= state.player.bag.length) return fail('no_such_item');
+    return PASS;
+  },
+
+  TAKE_TRASH: (state) => {
+    const item = state.player.trash;
+    if (!item) return fail('no_such_item');
+    if (!bagHasRoomFor(state, item.id)) return fail('bag_full');
+    return PASS;
+  },
 };
 
 /**

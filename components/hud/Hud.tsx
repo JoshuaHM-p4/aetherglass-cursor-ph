@@ -5,7 +5,7 @@ import { bus } from '../../game/EventBus';
 import { setPlaying } from '../../lib/client/play';
 import { cycleHotbar, getHotbarSlot, isIntroLocked, setBagOpen, setHotbarSlot, setSettingsOpen, subscribePadTap } from '../../game/inputCapture';
 import { playFileSfx, preloadFileSfx } from '../../game/systems/fileSfx';
-import { BAG_SLOTS } from '../../lib/sim/select';
+import { BAG_SLOTS, BAG_TRASH_SLOT } from '../../lib/sim/select';
 import { readGame, useGame } from '../useGame';
 import BagGrid from './BagGrid';
 import BossBar from './BossBar';
@@ -22,6 +22,12 @@ const BAG_COLS = 4;
 
 function bagStep(from: number, dx: number, dy: number): number {
   const rows = Math.ceil(BAG_SLOTS / BAG_COLS);
+  if (from === BAG_TRASH_SLOT) {
+    if (dx < 0 || dy < 0) return BAG_SLOTS - 1;
+    return BAG_TRASH_SLOT;
+  }
+  if (dy > 0 && from >= BAG_SLOTS - BAG_COLS) return BAG_TRASH_SLOT;
+  if (dx > 0 && from === BAG_SLOTS - 1) return BAG_TRASH_SLOT;
   const x = (((from % BAG_COLS) + dx) % BAG_COLS + BAG_COLS) % BAG_COLS;
   const y = (((Math.floor(from / BAG_COLS) + dy) % rows) + rows) % rows;
   return y * BAG_COLS + x;
@@ -34,6 +40,10 @@ function bagMove(event: KeyboardEvent): { dx: number; dy: number } | null {
   if (k === 'ArrowUp' || k === 'w' || k === 'W') return { dx: 0, dy: -1 };
   if (k === 'ArrowDown' || k === 's' || k === 'S') return { dx: 0, dy: 1 };
   return null;
+}
+
+function isTossKey(event: KeyboardEvent): boolean {
+  return event.key === 'Delete' || event.key === 'Del' || event.code === 'Delete';
 }
 
 export default function Hud(): JSX.Element {
@@ -53,7 +63,11 @@ export default function Hud(): JSX.Element {
     setOpen(open);
     setBagOpen(open);
     if (!open) setHeld(null);
-    else setBagCursor(0);
+    else {
+      setBagCursor(0);
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement) focused.blur();
+    }
     bus.emit('hud:bag_toggled', { open });
     playFileSfx(open ? 'open' : 'close');
   }, []);
@@ -113,6 +127,37 @@ export default function Hud(): JSX.Element {
     [heldIndex],
   );
 
+  const discardIndex = useCallback((index: number) => {
+    const item = readGame().state.player.bag[index];
+    if (!item) return;
+    const result = readGame().dispatch({ type: 'TRASH_ITEM', index }, 'keyboard');
+    if (!result.ok) return;
+    setHeld((held) => {
+      if (held === null) return null;
+      if (held === index) return null;
+      return held > index ? held - 1 : held;
+    });
+    bus.emit('hud:toast', { text: `tossed ${item.name}` });
+  }, []);
+
+  const onTrash = useCallback(() => {
+    setBagCursor(BAG_TRASH_SLOT);
+    if (heldIndex !== null) {
+      discardIndex(heldIndex);
+      return;
+    }
+    const trash = readGame().state.player.trash;
+    if (!trash) return;
+    const result = readGame().dispatch({ type: 'TAKE_TRASH' }, 'keyboard');
+    if (!result.ok) {
+      if (result.reason === 'bag_full') {
+        bus.emit('hud:toast', { text: 'bag full — toss something first' });
+      }
+      return;
+    }
+    bus.emit('hud:toast', { text: `kept ${trash.name}` });
+  }, [heldIndex, discardIndex]);
+
   useEffect(() => {
     preloadFileSfx();
   }, []);
@@ -146,11 +191,11 @@ export default function Hud(): JSX.Element {
       if (event.key === 'Tab') {
         if (event.repeat || settingsOpen) return;
         event.preventDefault();
-        if (typing) return;
+        if (typing && !bagOpen) return;
         toggleBag(!bagOpen);
         return;
       }
-      if (typing || settingsOpen) return;
+      if (settingsOpen) return;
       if (bagOpen) {
         const step = bagMove(event);
         if (step) {
@@ -164,13 +209,35 @@ export default function Hud(): JSX.Element {
           if (event.repeat) return;
           event.preventDefault();
           event.stopImmediatePropagation();
+          if (bagCursor === BAG_TRASH_SLOT) {
+            playFileSfx('select');
+            onTrash();
+            return;
+          }
           const item = readGame().state.player.bag[bagCursor];
           if (heldIndex === null && !item) return;
           playFileSfx('select');
           onBagSlot(bagCursor);
           return;
         }
+        if (isTossKey(event)) {
+          if (event.repeat) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (heldIndex !== null) {
+            playFileSfx('select');
+            discardIndex(heldIndex);
+            return;
+          }
+          if (bagCursor === BAG_TRASH_SLOT) return;
+          const item = readGame().state.player.bag[bagCursor];
+          if (!item) return;
+          playFileSfx('select');
+          discardIndex(bagCursor);
+          return;
+        }
       }
+      if (typing) return;
       if (event.repeat) return;
       const fromDigit =
         event.code === 'Digit1' || event.code === 'Numpad1'
@@ -205,7 +272,7 @@ export default function Hud(): JSX.Element {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [bagOpen, bagCursor, settingsOpen, heldIndex, toggleBag, toggleSettings, toggleHitboxes, stashInSlot, pickSlot, onBagSlot]);
+  }, [bagOpen, bagCursor, settingsOpen, heldIndex, toggleBag, toggleSettings, toggleHitboxes, stashInSlot, pickSlot, onBagSlot, onTrash, discardIndex]);
 
   useEffect(() => {
     return subscribePadTap((tap) => {
@@ -223,6 +290,11 @@ export default function Hud(): JSX.Element {
       }
       if (settingsOpen) return;
       if (tap === 'space' && bagOpen) {
+        if (bagCursor === BAG_TRASH_SLOT) {
+          playFileSfx('select');
+          onTrash();
+          return;
+        }
         const item = readGame().state.player.bag[bagCursor];
         if (heldIndex === null && !item) return;
         playFileSfx('select');
@@ -244,7 +316,7 @@ export default function Hud(): JSX.Element {
       setBagCursor((from) => bagStep(from, step.dx, step.dy));
       playFileSfx('cursor');
     });
-  }, [bagOpen, bagCursor, settingsOpen, heldIndex, toggleBag, toggleSettings, onBagSlot]);
+  }, [bagOpen, bagCursor, settingsOpen, heldIndex, toggleBag, toggleSettings, onBagSlot, onTrash]);
 
   useEffect(() => {
     if (hp <= 0 && bagOpen) toggleBag(false);
@@ -253,13 +325,18 @@ export default function Hud(): JSX.Element {
 
   useEffect(() => {
     let timer = 0;
-    const off = bus.on('hud:toast', ({ text }) => {
+    const show = (text: string) => {
       setToast(text);
       window.clearTimeout(timer);
       timer = window.setTimeout(() => setToast(null), 2200);
+    };
+    const offToast = bus.on('hud:toast', ({ text }) => show(text));
+    const offSim = bus.on('sim:event', (event) => {
+      if (event.type === 'item_left_behind') show('bag full — toss something');
     });
     return () => {
-      off();
+      offToast();
+      offSim();
       window.clearTimeout(timer);
     };
   }, []);
@@ -347,7 +424,14 @@ export default function Hud(): JSX.Element {
           className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-black/35"
           onClick={() => toggleBag(false)}
         >
-          <BagGrid cursor={bagCursor} heldIndex={heldIndex} onCursor={setBagCursor} onSlot={onBagSlot} />
+          <BagGrid
+            cursor={bagCursor}
+            heldIndex={heldIndex}
+            onCursor={setBagCursor}
+            onSlot={onBagSlot}
+            onTrash={onTrash}
+            onDiscard={discardIndex}
+          />
         </div>
       )}
       {toast && (

@@ -26,6 +26,8 @@
 import type { Entity, GameState, Item } from './types';
 
 export const BAG_SLOTS = 12;
+/** Cursor index for the trash can, one past the last bag cell. */
+export const BAG_TRASH_SLOT = BAG_SLOTS;
 export const NEARBY_LIMIT = 8;
 /** Chebyshev tiles. Adjacency for interaction; also the prefetch trigger radius is 3. */
 export const REACH_TILES = 1;

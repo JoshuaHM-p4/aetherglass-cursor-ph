@@ -333,8 +333,8 @@ function OccupiedSlot({ state }: { state: GameState }): JSX.Element {
         </div>
       </div>
       <div className="mt-auto flex flex-wrap gap-1">
-        {items.map((item) => (
-          <ItemIcon key={item.id} id={item.id} size={18} />
+        {items.map((item, i) => (
+          <ItemIcon key={`${i}-${item.id}`} id={item.id} size={18} />
         ))}
       </div>
     </div>

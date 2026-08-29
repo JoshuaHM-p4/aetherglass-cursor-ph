@@ -62,6 +62,9 @@ function normalizePlayer(state: GameState): GameState {
   if (typeof state.player.appearance !== 'string' || !state.player.appearance) {
     state.player.appearance = DEFAULT_APPEARANCE;
   }
+  if (!state.player.trash || typeof state.player.trash !== 'object') {
+    state.player.trash = null;
+  }
   return state;
 }
 

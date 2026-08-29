@@ -112,6 +112,8 @@ export interface PlayerState {
   facing: Facing;
   bag: Item[];
   hotbar: [string | null, string | null, string | null];
+  /** Last thrown stack. Overwritten on the next throw; click the can to take it back. */
+  trash: Item | null;
   /** Display name chosen at New Game. */
   name: string;
   /** Kenney Tiny Dungeon body. See lib/sim/appearances.ts. */
@@ -152,6 +154,8 @@ export type Action =
   | { type: 'STRIKE_ENTITY'; entityId: string; amount: number; withItemId: string | null }
   | { type: 'SET_HOTBAR'; slot: 0 | 1 | 2; itemId: string | null }
   | { type: 'SWAP_BAG'; a: number; b: number }
+  | { type: 'TRASH_ITEM'; index: number }
+  | { type: 'TAKE_TRASH' }
   | { type: 'ENTER_PASSAGE'; dir: Facing }
   | { type: 'GAIN_HEART' }
   | { type: 'MOVE_ENTITY'; entityId: string; roomId: string; tx: number; ty: number }
@@ -172,6 +176,7 @@ export type SimEvent =
   | { type: 'container_opened'; entityId: string }
   | { type: 'item_gained'; itemId: string }
   | { type: 'item_lost'; itemId: string }
+  | { type: 'item_left_behind'; itemId: string }
   | { type: 'damaged'; amount: number; source: string }
   | { type: 'healed'; amount: number }
   | { type: 'entity_state_changed'; entityId: string; state: EntityState }
