@@ -200,12 +200,18 @@ export function useOracleTurn(): OracleTurnApi {
           const reason =
             verdict.reason ?? (outcome.status === 'refused' ? outcome.reason : 'no_such_entity');
           const chip = { action: describeAction(verdict.action), reason };
-          liveRefusals.current = [...liveRefusals.current, chip];
           journalRef.current = record(journalRef.current, {
             turnId: verdict.turnId,
             kind: 'refused',
             line: `the world refused: ${chip.action} (${reason})`,
           });
+          // Invented ids are for the journal, not the glass. Demo beat 3 is
+          // not_in_contents (a real wish the world refused), not no_such_item.
+          if (verdict.action.type === 'GRANT_ITEM' && reason === 'no_such_item') {
+            bump((n) => n + 1);
+            return;
+          }
+          liveRefusals.current = [...liveRefusals.current, chip];
           bump((n) => n + 1);
         }
       },

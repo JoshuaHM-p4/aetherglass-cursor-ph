@@ -41,6 +41,7 @@
 
 import { tool } from 'ai';
 import { z } from 'zod';
+import { ITEM_IDS } from '../sim/registry';
 import { findRecipesFor } from '../sim/recipes';
 import { findItem } from '../sim/select';
 import type { Action } from '../sim/types';
@@ -72,7 +73,9 @@ export const effectInput = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('heal'), amount: z.number().int().min(1).max(6) }),
   z.object({
     kind: z.literal('grant'),
-    itemId: z.string(),
+    itemId: z.enum(ITEM_IDS).describe(
+      'An id from this closed list. To empty a chest or crate, call open_container instead of inventing loot.',
+    ),
     fromEntityId: z.string()
       .describe('The entity this came from. Its contents[] gate what is grantable.'),
   }),
@@ -205,8 +208,8 @@ export function buildTools(turn: TurnSim) {
     ...readOnly,
     open_container: tool({
       description:
-        'Open a chest, lockbox, or barrel the player is adjacent to. Only for kind="container". ' +
-        'This may fail — if it does, say so plainly rather than pretending otherwise.',
+        'Call this the moment they take, loot, rummage, or empty a chest, crate, or lockbox they are adjacent to. ' +
+        'It yields whatever is actually inside. Only for kind="container". If it fails, say so plainly.',
       inputSchema: z.object({ entityId: z.string() }),
       execute: async ({ entityId }) => turn.propose({ type: 'OPEN_CONTAINER', entityId }),
     }),

@@ -138,6 +138,28 @@ export default function MainMenu(): JSX.Element {
         )}
       </div>
 
+      <p className="pointer-events-none absolute right-5 bottom-4 z-20 text-right font-pixel text-[7px] leading-relaxed tracking-[0.14em] text-white/28">
+        art{' '}
+        <a
+          href="https://kenney.nl"
+          target="_blank"
+          rel="noreferrer"
+          className="pointer-events-auto text-white/35 hover:text-amber-100/70"
+        >
+          kenney.nl
+        </a>
+        <br />
+        made by{' '}
+        <a
+          href="https://github.com/JoshuaHM-p4"
+          target="_blank"
+          rel="noreferrer"
+          className="pointer-events-auto text-white/35 hover:text-amber-100/70"
+        >
+          JoshuaHM-p4
+        </a>
+      </p>
+
       {settingsOpen && <SettingsModal onClose={() => setSettings(false)} />}
     </div>
   );

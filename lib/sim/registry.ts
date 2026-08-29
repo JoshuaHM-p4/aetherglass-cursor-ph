@@ -96,6 +96,9 @@ export const ITEM_REGISTRY: Readonly<Record<string, ItemTemplate>> = {
 
 export type ItemId = keyof typeof ITEM_REGISTRY & string;
 
+/** Closed list for grant schemas. The model sees these ids; it cannot name a fourth coin. */
+export const ITEM_IDS = Object.keys(ITEM_REGISTRY) as [string, ...string[]];
+
 export function isKnownItem(id: string): boolean {
   return Object.prototype.hasOwnProperty.call(ITEM_REGISTRY, id);
 }
