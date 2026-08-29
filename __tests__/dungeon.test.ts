@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_FACINGS, EXIT_TILE, FOUNTAIN_ROOM_ID } from '../lib/dungeon/const';
+import { ALL_FACINGS, EXIT_TILE, FOUNTAIN_ROOM_ID, exitDirAt, exitMouthCells, isExitTile } from '../lib/dungeon/const';
 import { keyInvariantHolds } from '../lib/dungeon/generate';
 import { applyAction, initialState } from '../lib/sim/reducer';
 import type { Facing, GameState } from '../lib/sim/types';
@@ -105,6 +105,38 @@ describe('dungeon generation', () => {
     expect(result.events).toContainEqual(
       expect.objectContaining({ type: 'room_entered', kind: 'cave' }),
     );
+  });
+
+  it('treats the doorway as a 3-tile mouth', () => {
+    expect(exitMouthCells('up')).toEqual([
+      { tx: 5, ty: 0 },
+      { tx: 6, ty: 0 },
+      { tx: 7, ty: 0 },
+    ]);
+    expect(isExitTile(5, 0, 'up')).toBe(true);
+    expect(isExitTile(7, 0, 'up')).toBe(true);
+    expect(isExitTile(4, 0, 'up')).toBe(false);
+    expect(isExitTile(6, 1, 'up')).toBe(false);
+    expect(exitDirAt(5, 0)).toBe('up');
+    expect(exitDirAt(0, 5)).toBe('left');
+  });
+
+  it('ENTER_PASSAGE accepts any tile of the mouth', () => {
+    const boot = initialState(7);
+    const stepped = applyAction(boot, { type: 'MOVE', facing: 'up', tx: 5, ty: 0 });
+    expect(stepped.ok).toBe(true);
+    const result = applyAction(stepped.state, { type: 'ENTER_PASSAGE', dir: 'up' });
+    expect(result.ok).toBe(true);
+    expect(result.state.player.roomId).not.toBe(FOUNTAIN_ROOM_ID);
+  });
+
+  it('ENTER_PASSAGE refuses a tile beside the mouth', () => {
+    const boot = initialState(7);
+    const stepped = applyAction(boot, { type: 'MOVE', facing: 'up', tx: 4, ty: 0 });
+    expect(stepped.ok).toBe(true);
+    const result = applyAction(stepped.state, { type: 'ENTER_PASSAGE', dir: 'up' });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('not_nearby');
   });
 
   it('never places a ghost or slime in the fountain across many seeds', () => {

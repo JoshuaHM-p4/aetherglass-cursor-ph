@@ -28,7 +28,7 @@
 // "no unguarded mutation" expressed as a type rather than a code review.
 // ===========================================================================
 
-import { EXIT_TILE, ROOM_SIZE } from '../dungeon/const';
+import { isExitTile, ROOM_SIZE } from '../dungeon/const';
 import { recipe } from './recipes';
 import { isKnownItem } from './registry';
 import { bagHasRoomFor, findItem, heldQty, inStrikeRange, isAdjacent } from './select';
@@ -138,8 +138,7 @@ export const guards: Guards = {
     if (!room) return fail('no_such_entity');
     const passage = room.exits[action.dir];
     if (!passage) return fail('not_nearby');
-    const edge = EXIT_TILE[action.dir];
-    if (state.player.tx !== edge.tx || state.player.ty !== edge.ty) return fail('not_nearby');
+    if (!isExitTile(state.player.tx, state.player.ty, action.dir)) return fail('not_nearby');
     if (passage.lock !== 'open') return fail('locked');
     return PASS;
   },

@@ -25,13 +25,16 @@ export const GRID_DELTA: Record<Facing, { gx: number; gy: number }> = {
   right: { gx: 1, gy: 0 },
 };
 
-/** Mid-edge opening the player walks onto to leave a room. */
+/** Centre cell of a doorway. The walkable mouth is this ± EXIT_SPAN along the wall. */
 export const EXIT_TILE: Record<Facing, { tx: number; ty: number }> = {
   up: { tx: 6, ty: 0 },
   down: { tx: 6, ty: 11 },
   left: { tx: 0, ty: 6 },
   right: { tx: 11, ty: 6 },
 };
+
+/** Extra cells on each side of EXIT_TILE. Visual gap stays 1 tile; walk/collision use this span. */
+export const EXIT_SPAN = 1;
 
 /** Interior tile the player lands on after travelling `dir`. */
 export const ARRIVAL_TILE: Record<Facing, { tx: number; ty: number }> = {
@@ -69,7 +72,23 @@ export function facingFromDoorId(id: string): Facing | null {
 
 export function isExitTile(tx: number, ty: number, dir: Facing): boolean {
   const e = EXIT_TILE[dir];
-  return e.tx === tx && e.ty === ty;
+  if (dir === 'up' || dir === 'down') {
+    return ty === e.ty && Math.abs(tx - e.tx) <= EXIT_SPAN;
+  }
+  return tx === e.tx && Math.abs(ty - e.ty) <= EXIT_SPAN;
+}
+
+/** The three (or fewer) cells that make up a doorway on `dir`. */
+export function exitMouthCells(dir: Facing): Array<{ tx: number; ty: number }> {
+  const e = EXIT_TILE[dir];
+  const cells: Array<{ tx: number; ty: number }> = [];
+  for (let d = -EXIT_SPAN; d <= EXIT_SPAN; d++) {
+    const tx = dir === 'up' || dir === 'down' ? e.tx + d : e.tx;
+    const ty = dir === 'left' || dir === 'right' ? e.ty + d : e.ty;
+    if (tx < 0 || tx >= ROOM_SIZE || ty < 0 || ty >= ROOM_SIZE) continue;
+    cells.push({ tx, ty });
+  }
+  return cells;
 }
 
 export function exitDirAt(tx: number, ty: number): Facing | null {

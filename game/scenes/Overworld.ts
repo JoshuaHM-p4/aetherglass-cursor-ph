@@ -6,10 +6,14 @@
 import Phaser from 'phaser';
 import {
   ALL_FACINGS,
+  EXIT_SPAN,
   EXIT_TILE,
   GHOST_ID,
+  OPPOSITE,
   ROOM_SIZE,
   exitDirAt,
+  exitMouthCells,
+  facingFromDoorId,
 } from '../../lib/dungeon/const';
 import type { Entity, Facing, GameState, Room } from '../../lib/sim/types';
 import { gameStore, world } from '../../lib/sim/store';
@@ -48,6 +52,8 @@ export interface OverworldRefs {
 
 const SPEED = 80;
 const WORLD = ROOM_SIZE * TILE;
+/** Outer lip so the scavenger cannot stand in the wall-top of a doorway. */
+const OPENING_LIP = 4;
 
 function applyEntityState(sprite: Phaser.Physics.Arcade.Sprite, entity: Entity): void {
   if (entity.state === 'dead') {
@@ -127,6 +133,16 @@ function insetBody(sprite: Phaser.Physics.Arcade.Sprite, size: number): void {
   body.setSize(size, size, true);
 }
 
+/** Locked doors block the whole 3-tile mouth so you cannot walk around the gate. */
+function sizeDoorBody(sprite: Phaser.Physics.Arcade.Sprite, entityId: string): void {
+  const body = sprite.body as Phaser.Physics.Arcade.Body | null;
+  if (!body) return;
+  const dir = facingFromDoorId(entityId);
+  const span = TILE * (EXIT_SPAN * 2 + 1);
+  if (dir === 'up' || dir === 'down') body.setSize(span, TILE, true);
+  else if (dir === 'left' || dir === 'right') body.setSize(TILE, span, true);
+}
+
 export class Overworld extends Phaser.Scene implements OverworldRefs {
   entityLayer!: Phaser.GameObjects.Container;
   player!: Phaser.Physics.Arcade.Sprite;
@@ -142,6 +158,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private lastTx = -1;
   private lastTy = -1;
+  private lips: Phaser.GameObjects.Rectangle[] = [];
   private loadedRoomId: string | null = null;
   private prev: GameState | null = null;
   private unsubStore: (() => void) | null = null;
@@ -286,6 +303,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       return;
     }
     const knocked = tickKnockback(this.player, this.time.now);
+    let away: Facing | null = null;
     if (!knocked) {
       const left = this.cursors.left.isDown || this.wasd.A.isDown;
       const right = this.cursors.right.isDown || this.wasd.D.isDown;
@@ -293,29 +311,28 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       const down = this.cursors.down.isDown || this.wasd.S.isDown;
       let vx = 0;
       let vy = 0;
-      let facing: Facing | null = null;
       if (left) {
         vx = -SPEED;
-        facing = 'left';
+        away = 'left';
       } else if (right) {
         vx = SPEED;
-        facing = 'right';
+        away = 'right';
       }
       if (up) {
         vy = -SPEED;
-        facing = facing ?? 'up';
+        away = away ?? 'up';
       } else if (down) {
         vy = SPEED;
-        facing = facing ?? 'down';
+        away = away ?? 'down';
       }
       this.player.setVelocity(vx, vy);
-      if (facing === 'left') this.player.setFlipX(true);
-      if (facing === 'right') this.player.setFlipX(false);
+      if (away === 'left') this.player.setFlipX(true);
+      if (away === 'right') this.player.setFlipX(false);
       const moving = vx !== 0 || vy !== 0;
       if (moving) requestSessionDismiss();
       if (moving) this.playWalk();
       else this.haltWalk();
-      if (facing) this.facing = facing;
+      if (away) this.facing = away;
     } else {
       this.haltWalk();
     }
@@ -326,13 +343,15 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       this.lastTy = ty;
       bus.emit('world:tile_entered', { tx, ty, facing: this.facing });
       this.tryPickup(tx, ty);
-      this.tryPassage(tx, ty, this.facing);
     }
+    this.tryPassage(tx, ty, away);
   }
 
-  private tryPassage(tx: number, ty: number, facing: Facing): void {
+  private tryPassage(tx: number, ty: number, away: Facing | null): void {
+    if (isWorldInputBlocked()) return;
     const dir = exitDirAt(tx, ty);
-    if (!dir || dir !== facing) return;
+    if (!dir) return;
+    if (away && away === OPPOSITE[dir]) return;
     const room = world().dungeon.rooms[world().player.roomId];
     const passage = room?.exits[dir];
     if (!passage || passage.lock !== 'open') return;
@@ -428,6 +447,8 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   private clearDecor(): void {
     for (const child of [...this.floorLayer.list]) child.destroy();
     this.walls.clear(true, true);
+    for (const lip of this.lips) lip.destroy();
+    this.lips = [];
     for (const child of [...this.entityLayer.list]) child.destroy();
     this.fadeImage?.destroy();
     this.fadeImage = null;
@@ -448,6 +469,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       body.allowGravity = false;
       const foe = entity.kind === 'enemy' || entity.kind === 'elite';
       insetBody(sprite, foe ? ACTOR_BODY : PROP_BODY);
+      if (entity.kind === 'door') sizeDoorBody(sprite, entity.id);
       if (entity.tags.includes('pickup')) {
         body.checkCollision.none = true;
       } else {
@@ -513,26 +535,93 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   }
 
   private buildWalls(room: Room): void {
-    const openings = new Set<string>();
+    const visualHoles = new Set<string>();
+    const walkHoles = new Set<string>();
     for (const dir of ALL_FACINGS) {
-      if (room.exits[dir]) {
-        const e = EXIT_TILE[dir];
-        openings.add(`${e.tx},${e.ty}`);
-      }
+      if (!room.exits[dir]) continue;
+      const e = EXIT_TILE[dir];
+      visualHoles.add(`${e.tx},${e.ty}`);
+      for (const cell of exitMouthCells(dir)) walkHoles.add(`${cell.tx},${cell.ty}`);
     }
     for (let tx = 0; tx < ROOM_SIZE; tx++) {
-      this.placeWallUnlessOpen(tx, 0, openings);
-      this.placeWallUnlessOpen(tx, ROOM_SIZE - 1, openings);
+      this.placePerimeterWall(tx, 0, visualHoles, walkHoles);
+      this.placePerimeterWall(tx, ROOM_SIZE - 1, visualHoles, walkHoles);
     }
     for (let ty = 1; ty < ROOM_SIZE - 1; ty++) {
-      this.placeWallUnlessOpen(0, ty, openings);
-      this.placeWallUnlessOpen(ROOM_SIZE - 1, ty, openings);
+      this.placePerimeterWall(0, ty, visualHoles, walkHoles);
+      this.placePerimeterWall(ROOM_SIZE - 1, ty, visualHoles, walkHoles);
+    }
+    this.placeOpeningLips(room);
+  }
+
+  private placeOpeningLips(room: Room): void {
+    for (const dir of ALL_FACINGS) {
+      if (!room.exits[dir]) continue;
+      const cells = exitMouthCells(dir);
+      if (cells.length === 0) continue;
+      const minTx = Math.min(...cells.map((c) => c.tx));
+      const maxTx = Math.max(...cells.map((c) => c.tx));
+      const minTy = Math.min(...cells.map((c) => c.ty));
+      const maxTy = Math.max(...cells.map((c) => c.ty));
+      const left = minTx * TILE;
+      const top = minTy * TILE;
+      const spanX = (maxTx - minTx + 1) * TILE;
+      const spanY = (maxTy - minTy + 1) * TILE;
+      let cx: number;
+      let cy: number;
+      let w: number;
+      let h: number;
+      if (dir === 'up') {
+        cx = left + spanX / 2;
+        cy = OPENING_LIP / 2;
+        w = spanX;
+        h = OPENING_LIP;
+      } else if (dir === 'down') {
+        cx = left + spanX / 2;
+        cy = WORLD - OPENING_LIP / 2;
+        w = spanX;
+        h = OPENING_LIP;
+      } else if (dir === 'left') {
+        cx = OPENING_LIP / 2;
+        cy = top + spanY / 2;
+        w = OPENING_LIP;
+        h = spanY;
+      } else {
+        cx = WORLD - OPENING_LIP / 2;
+        cy = top + spanY / 2;
+        w = OPENING_LIP;
+        h = spanY;
+      }
+      const lip = this.add.rectangle(cx, cy, w, h, 0x000000, 0);
+      this.physics.add.existing(lip, true);
+      this.physics.add.collider(this.player, lip);
+      this.lips.push(lip);
     }
   }
 
-  private placeWallUnlessOpen(tx: number, ty: number, openings: Set<string>): void {
-    if (openings.has(`${tx},${ty}`)) return;
-    const wall = this.walls.create(tx * TILE + 8, ty * TILE + 8, wallTexture(tx, ty, this)) as Phaser.Physics.Arcade.Sprite;
+  private placePerimeterWall(
+    tx: number,
+    ty: number,
+    visualHoles: Set<string>,
+    walkHoles: Set<string>,
+  ): void {
+    const key = `${tx},${ty}`;
+    if (visualHoles.has(key)) return;
+    const texture = wallTexture(tx, ty, this);
+    const x = tx * TILE + 8;
+    const y = ty * TILE + 8;
+    if (walkHoles.has(key)) {
+      // Same art as the rest of the wall, but no body — the locked door's
+      // 3-tile box (or the opening lips on an unlocked exit) is the collider.
+      const wall = this.walls.create(x, y, texture) as Phaser.Physics.Arcade.Sprite;
+      const body = wall.body as Phaser.Physics.Arcade.StaticBody | null;
+      if (body) {
+        body.enable = false;
+        body.checkCollision.none = true;
+      }
+      return;
+    }
+    const wall = this.walls.create(x, y, texture) as Phaser.Physics.Arcade.Sprite;
     insetBody(wall, WALL_BODY);
   }
 

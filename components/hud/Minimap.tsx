@@ -1,6 +1,6 @@
 'use client';
 
-import type { JSX } from 'react';
+import { useMemo, type JSX } from 'react';
 import { minimapOf, type MiniFill, type MiniRoom } from '../../lib/sim/minimap';
 import type { Facing } from '../../lib/sim/types';
 import { useGame } from '../useGame';
@@ -49,7 +49,8 @@ function ChestMarks({ room, x, y }: { room: MiniRoom; x: number; y: number }): J
 }
 
 export default function Minimap(): JSX.Element | null {
-  const model = useGame((s) => minimapOf(s.state));
+  const state = useGame((s) => s.state);
+  const model = useMemo(() => minimapOf(state), [state]);
   if (model.rooms.length === 0) return null;
 
   const xs = model.rooms.map((r) => r.gx);

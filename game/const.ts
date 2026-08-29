@@ -9,6 +9,7 @@ export const CAMERA_ZOOM = 2;
 export const PROP_BODY = 10;
 /** Scavenger and foes share this box — physics collision and contact damage. */
 export const ACTOR_BODY = 6;
-export const WALL_BODY = 12;
+/** Full-tile wall bodies. Doorway flanks skip these so a 1-tile visual gap stays walkable. */
+export const WALL_BODY = TILE;
 export const SFX_VOLUME = 0.5;
 export const MUSIC_VOLUME = 0.25;
