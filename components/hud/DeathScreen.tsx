@@ -83,11 +83,11 @@ export default function DeathScreen(): JSX.Element | null {
       >
         <p className="font-pixel text-[9px] tracking-[0.35em] text-red-400/80">THE PANE WENT DARK</p>
         <p className="mt-3 font-pixel text-[11px] leading-relaxed text-amber-100/90">
-          I will not narrate a corpse.
+          You went still. I did not. The well still knows your name.
         </p>
         <p className="mt-1 font-pixel text-[10px] leading-relaxed text-white/45">
-          {source ? `felled by the ${source}.` : 'you stopped moving.'} the keep keeps its own
-          counsel now.
+          {source ? `felled by the ${source}.` : 'you stopped moving.'} stand, and the fountain
+          will have you back.
         </p>
         <button
           type="button"

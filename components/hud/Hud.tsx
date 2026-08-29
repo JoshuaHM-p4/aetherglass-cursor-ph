@@ -10,8 +10,9 @@ import BagGrid from './BagGrid';
 import Hearts from './Hearts';
 import Hotbar from './Hotbar';
 import InteractHint from './InteractHint';
-import SettingsModal, { HitboxButton, SettingsButton } from './SettingsModal';
-import { isHitboxDebug, toggleHitboxDebug } from '../../game/hitboxDebug';
+import Minimap from './Minimap';
+import SettingsModal, { SettingsButton } from './SettingsModal';
+import { toggleHitboxDebug } from '../../game/hitboxDebug';
 
 export default function Hud(): JSX.Element {
   const hp = useGame((s) => s.state.player.hp);
@@ -20,8 +21,6 @@ export default function Hud(): JSX.Element {
   const [slot, setSlot] = useState(getHotbarSlot);
   const [heldIndex, setHeld] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-
-  const [hitboxes, setHitboxes] = useState(isHitboxDebug);
 
   const toggleBag = useCallback((open: boolean) => {
     if (open) {
@@ -49,7 +48,6 @@ export default function Hud(): JSX.Element {
 
   const toggleHitboxes = useCallback(() => {
     const on = toggleHitboxDebug();
-    setHitboxes(on);
     playFileSfx('cursor');
     bus.emit('hud:toast', { text: on ? 'hitboxes on' : 'hitboxes off' });
   }, []);
@@ -190,9 +188,9 @@ export default function Hud(): JSX.Element {
   return (
     <>
       <InteractHint />
+      <Minimap />
       <div className="pointer-events-auto absolute top-5 right-5 z-30 flex flex-col gap-1.5" data-hud>
         <SettingsButton open={settingsOpen} onClick={() => toggleSettings(!settingsOpen)} />
-        <HitboxButton on={hitboxes} onClick={toggleHitboxes} />
       </div>
       <div className="pointer-events-auto absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 flex-col items-start gap-1.5" data-hud>
         <Hearts />
