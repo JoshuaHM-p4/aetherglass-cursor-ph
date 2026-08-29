@@ -83,6 +83,9 @@ export async function POST(req: Request) {
         system,
         messages: converted,
         tools: buildTools(turn),
+        // OpenAI 429s (especially daily caps) do not recover in a few seconds.
+        // Default is 2 retries / 3 attempts — that is the 8s “200 with an error” pane.
+        maxRetries: 0,
         // toolChoice is sticky across steps. Forcing focus_entity at the top
         // level made every continuation call it again, then narrate again —
         // the glass spoke the same look twice.
@@ -102,7 +105,7 @@ export async function POST(req: Request) {
 
       writer.merge(result.toUIMessageStream());
     },
-    onError: () => 'the glass has gone dark',
+    onError: (error) => glassErrorLine(error),
   });
 
   return createUIMessageStreamResponse({ stream });
@@ -118,4 +121,10 @@ function resolveOracleProvider(): OracleProvider {
   if (keyPresent('ANTHROPIC_API_KEY')) return 'anthropic';
   if (keyPresent('OPENAI_API_KEY')) return 'openai';
   throw new Error('no_oracle_key');
+}
+
+function glassErrorLine(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  if (/rate limit/i.test(text)) return 'the glass is overdrawn — rest a while';
+  return 'the glass has gone dark';
 }

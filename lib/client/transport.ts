@@ -41,16 +41,18 @@ export function createOracleTransport(
   // buffer when kind === 'choose'.
   return new DefaultChatTransport<UIMessage>({
     api: ORACLE_ENDPOINT,
-    prepareSendMessagesRequest: ({ messages, body }) => ({
-      body: {
-        kind: DEFAULT_TURN_KIND,
-        ...body,
-        messages: pruneIncompleteToolParts(messages),
-        snapshot: deps.snapshot(),
-        journal: deps.journal(),
-        turnId: deps.nextTurnId(),
-      },
-    }),
+    prepareSendMessagesRequest: ({ messages, body }) => {
+      return {
+        body: {
+          kind: DEFAULT_TURN_KIND,
+          ...body,
+          messages: pruneIncompleteToolParts(messages),
+          snapshot: deps.snapshot(),
+          journal: deps.journal(),
+          turnId: deps.nextTurnId(),
+        },
+      };
+    },
   });
 }
 

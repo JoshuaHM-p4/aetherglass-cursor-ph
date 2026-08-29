@@ -196,16 +196,17 @@ export type OracleProvider = 'anthropic' | 'openai';
 /**
  * Model routing. ARCHITECTURE §8.5: small model for small jobs.
  *   'look' / prefetch of a prop  -> fast (haiku / gpt-5.4-mini)
- *   'speak' / 'choose' / elite   -> frontier (sonnet / gpt-5.4)
+ *   'speak' / 'choose'           -> frontier (sonnet / gpt-5.4)
  * One expression, no UI, no settings (PRD §5 forbids a model picker).
+ * Look/prefetch stay on the fast model even next to an elite; speaking
+ * is what needs the frontier model.
  */
 export function pickModel(
   kind: TurnKind,
-  packet: ContextPacket,
+  _packet: ContextPacket,
   provider: OracleProvider = 'anthropic',
 ): string {
-  const eliteNearby = packet.nearby.some(e => e.kind === 'elite');
-  const tier = kind === 'speak' || kind === 'choose' || eliteNearby ? 'frontier' : 'fast';
+  const tier = kind === 'speak' || kind === 'choose' ? 'frontier' : 'fast';
   return MODEL_IDS[provider][tier];
 }
 

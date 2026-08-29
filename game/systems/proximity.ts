@@ -100,13 +100,14 @@ export function installProximitySystem(scene: Phaser.Scene): () => void {
   });
 
   const onEnter = () => {
-    if (isWorldInputBlocked()) return;
+    const blocked = isWorldInputBlocked();
+    const best = blocked ? null : pickAdjacentEntity(world(), s.facing);
+    if (blocked) return;
 
     // Tile adjacency is the sim's definition of reach (`isAdjacent`). The overlap
     // set is a 60fps hint; Enter is a moment, so we ask the store. Solid chests
     // keep the player tangent to a 1-tile circle, which arcade does not count as
     // overlap, so `heldReach` is often empty when you are standing right there.
-    const best = pickAdjacentEntity(world(), s.facing);
     if (best) bus.emit('world:interact', { entityId: best.id });
   };
 

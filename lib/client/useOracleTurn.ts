@@ -156,68 +156,75 @@ export function useOracleTurn(): OracleTurnApi {
     }
   };
 
-  const { messages: uiMessages, sendMessage, status: chatStatus, regenerate, setMessages } =
-    useChat({
-      transport,
-      onData: (part) => {
-        if (part.type === 'data-focus') {
-          const data = asFocus(part.data);
-          if (data) bus.emit('pane:focus', data);
-          return;
-        }
-        if (part.type === 'data-choices') {
-          const data = asChoices(part.data);
-          if (!data) return;
-          journalRef.current = record(journalRef.current, {
-            turnId: data.turnId,
-            kind: 'offered',
-            line: `offered: ${data.choices.map((c) => c.label).join(' / ')}`,
-          });
-          setRack({
-            status: 'pending',
-            turnId: data.turnId,
-            offerId: data.offerId,
-            prompt: data.prompt,
-            choices: data.choices,
-          });
-          return;
-        }
-        if (part.type !== 'data-verdict') return;
-        const verdict = asVerdict(part.data);
-        if (!verdict) return;
-        const outcome = gameStore.getState().applyVerdict({
-          key: verdictKey(verdict),
-          action: verdict.action,
-          ok: verdict.ok,
-          reason: verdict.reason,
+  const {
+    messages: uiMessages,
+    sendMessage,
+    status: chatStatus,
+    regenerate,
+    setMessages,
+    stop,
+    clearError,
+  } = useChat({
+    transport,
+    onData: (part) => {
+      if (part.type === 'data-focus') {
+        const data = asFocus(part.data);
+        if (data) bus.emit('pane:focus', data);
+        return;
+      }
+      if (part.type === 'data-choices') {
+        const data = asChoices(part.data);
+        if (!data) return;
+        journalRef.current = record(journalRef.current, {
+          turnId: data.turnId,
+          kind: 'offered',
+          line: `offered: ${data.choices.map((c) => c.label).join(' / ')}`,
         });
-        if (outcome.status === 'diverged') {
-          journalRef.current = record(journalRef.current, {
-            turnId: verdict.turnId,
-            kind: 'diverged',
-            line: `the world moved: ${verdict.action.type} (${outcome.reason})`,
-          });
-        }
-        if (outcome.status === 'refused' || !verdict.ok) {
-          const reason =
-            verdict.reason ?? (outcome.status === 'refused' ? outcome.reason : 'no_such_entity');
-          const chip = { action: describeAction(verdict.action), reason };
-          journalRef.current = record(journalRef.current, {
-            turnId: verdict.turnId,
-            kind: 'refused',
-            line: `the world refused: ${chip.action} (${reason})`,
-          });
-          // Invented ids are for the journal, not the glass. Demo beat 3 is
-          // not_in_contents (a real wish the world refused), not no_such_item.
-          if (verdict.action.type === 'GRANT_ITEM' && reason === 'no_such_item') {
-            bump((n) => n + 1);
-            return;
-          }
-          liveRefusals.current = [...liveRefusals.current, chip];
+        setRack({
+          status: 'pending',
+          turnId: data.turnId,
+          offerId: data.offerId,
+          prompt: data.prompt,
+          choices: data.choices,
+        });
+        return;
+      }
+      if (part.type !== 'data-verdict') return;
+      const verdict = asVerdict(part.data);
+      if (!verdict) return;
+      const outcome = gameStore.getState().applyVerdict({
+        key: verdictKey(verdict),
+        action: verdict.action,
+        ok: verdict.ok,
+        reason: verdict.reason,
+      });
+      if (outcome.status === 'diverged') {
+        journalRef.current = record(journalRef.current, {
+          turnId: verdict.turnId,
+          kind: 'diverged',
+          line: `the world moved: ${verdict.action.type} (${outcome.reason})`,
+        });
+      }
+      if (outcome.status === 'refused' || !verdict.ok) {
+        const reason =
+          verdict.reason ?? (outcome.status === 'refused' ? outcome.reason : 'no_such_entity');
+        const chip = { action: describeAction(verdict.action), reason };
+        journalRef.current = record(journalRef.current, {
+          turnId: verdict.turnId,
+          kind: 'refused',
+          line: `the world refused: ${chip.action} (${reason})`,
+        });
+        // Invented ids are for the journal, not the glass. Demo beat 3 is
+        // not_in_contents (a real wish the world refused), not no_such_item.
+        if (verdict.action.type === 'GRANT_ITEM' && reason === 'no_such_item') {
           bump((n) => n + 1);
+          return;
         }
-      },
-    });
+        liveRefusals.current = [...liveRefusals.current, chip];
+        bump((n) => n + 1);
+      }
+    },
+  });
 
   const sendRef = useRef(sendMessage);
   sendRef.current = sendMessage;
@@ -227,6 +234,12 @@ export function useOracleTurn(): OracleTurnApi {
   uiMessagesRef.current = uiMessages;
   const setMessagesRef = useRef(setMessages);
   setMessagesRef.current = setMessages;
+  const stopRef = useRef(stop);
+  stopRef.current = stop;
+  const clearErrorRef = useRef(clearError);
+  clearErrorRef.current = clearError;
+  const regenerateRef = useRef(regenerate);
+  regenerateRef.current = regenerate;
 
   const capture = (entityId: string): StoredPaneSession => {
     freezeRefusals();
@@ -256,6 +269,8 @@ export function useOracleTurn(): OracleTurnApi {
   closeSessionRef.current = () => {
     const id = getActiveSessionId();
     if (id) putSession(capture(id));
+    void stopRef.current();
+    clearErrorRef.current();
     streamOwnerRef.current = null;
     setActiveSessionId(null);
     setActiveEntity(null);
@@ -307,13 +322,22 @@ export function useOracleTurn(): OracleTurnApi {
         setActiveEntity(entityId);
         bus.emit('pane:awake', { open: true, reason: 'interact' });
         bus.emit('pane:focus', { entityId, style: 'spotlight' });
+        return;
       }
-      return;
+      // Esc parks the pane without aborting useChat, which used to leave
+      // lookAt dead until a reload. Abort the orphan stream and continue.
+      if (streamOwnerRef.current !== null) return;
+      void stopRef.current();
+      clearErrorRef.current();
     }
 
     if (getActiveSessionId() === entityId) {
       bus.emit('pane:awake', { open: true, reason: 'interact' });
       bus.emit('pane:focus', { entityId, style: 'spotlight' });
+      if (chatStatusRef.current === 'error') {
+        clearErrorRef.current();
+        void regenerateRef.current();
+      }
       return;
     }
 
@@ -328,6 +352,10 @@ export function useOracleTurn(): OracleTurnApi {
 
     if (existing && existing.messages.length > 0) {
       restore(existing);
+      if (chatStatusRef.current === 'error') {
+        clearErrorRef.current();
+        void regenerateRef.current();
+      }
       return;
     }
 
