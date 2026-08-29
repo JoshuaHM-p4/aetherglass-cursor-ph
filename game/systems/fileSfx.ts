@@ -94,10 +94,23 @@ function playHtml(url: string, volume: number): void {
   void el.play().catch(() => undefined);
 }
 
+/** Cues that must not layer if many fire in one chest dump. */
+const EXCLUSIVE = new Set<FileSfxId>(['fanfare']);
+const exclusiveUntil = new Map<FileSfxId, number>();
+
+function nowMs(): number {
+  return typeof performance === 'undefined' ? Date.now() : performance.now();
+}
+
 export function playFileSfx(id: FileSfxId, mix = MIX[id]): void {
   const volume = mixVolume(mix);
   const ac = audioCtx();
   const buf = buffers.get(id);
+  if (EXCLUSIVE.has(id)) {
+    const t = nowMs();
+    if (t < (exclusiveUntil.get(id) ?? 0)) return;
+    exclusiveUntil.set(id, t + (buf ? buf.duration * 1000 : 800));
+  }
   // Prefer Web Audio only when the context is actually running. A suspended
   // context is why Phaser's SoundManager swallowed bag open/close on Tab.
   if (ac && buf && ac.state === 'running') {
