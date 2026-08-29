@@ -13,7 +13,7 @@ let music = MUSIC_VOLUME;
 let snapshot: VolumeLevels = { sfx, music };
 let hydrated = false;
 const listeners = new Set<() => void>();
-let musicSink: ((volume: number) => void) | null = null;
+const musicSinks = new Set<(volume: number) => void>();
 
 function clamp(n: number): number {
   return Math.max(0, Math.min(1, n));
@@ -79,7 +79,7 @@ export function setMusicVolume(next: number): void {
   music = clamp(next);
   snapshot = { sfx, music };
   persist();
-  musicSink?.(music);
+  musicSinks.forEach((fn) => fn(music));
   notify();
 }
 
@@ -88,9 +88,10 @@ export function resetVolume(): void {
   setMusicVolume(MUSIC_VOLUME);
 }
 
-/** Phaser music system registers here so the slider can retune the playing loop. */
-export function bindMusicVolume(fn: (volume: number) => void): void {
-  musicSink = fn;
+/** Phaser and the title loop register here so the slider can retune whatever is playing. */
+export function bindMusicVolume(fn: (volume: number) => void): () => void {
+  musicSinks.add(fn);
+  return () => musicSinks.delete(fn);
 }
 
 export function subscribeVolume(fn: () => void): () => void {

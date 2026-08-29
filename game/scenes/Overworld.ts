@@ -33,6 +33,7 @@ import { installSessionMarks } from '../systems/sessionMark';
 import { plantRoomFade } from '../systems/roomFade';
 import { installSoundSystem } from '../systems/sound';
 import { playRoomMusic, stopRoomMusic } from '../systems/music';
+import { playTitleMusic } from '../systems/titleMusic';
 import { applyPlayerLook, lookTextureKey } from '../systems/playerLook';
 import { applyRoomCamera } from '../systems/roomCamera';
 import { wipeRoom } from '../systems/veil';
@@ -413,6 +414,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.player.setVelocity(0, 0);
     this.haltWalk();
     stopRoomMusic();
+    playTitleMusic();
     this.scene.pause('Overworld');
   }
 

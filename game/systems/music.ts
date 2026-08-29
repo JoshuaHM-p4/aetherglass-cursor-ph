@@ -2,6 +2,7 @@
 
 import Phaser from 'phaser';
 import type { RoomKind } from '../../lib/sim/types';
+import { stopTitleMusic } from './titleMusic';
 import { bindMusicVolume, getMusicVolume } from './volume';
 
 const TRACK: Record<RoomKind, string> = {
@@ -16,6 +17,7 @@ let current: Phaser.Sound.BaseSound | null = null;
 let kind: RoomKind | null = null;
 
 export function playRoomMusic(scene: Phaser.Scene, next: RoomKind): void {
+  stopTitleMusic();
   if (kind === next && current?.isPlaying) return;
   const key = TRACK[next];
   if (!scene.cache.audio.exists(key) && !scene.sound.get(key)) {

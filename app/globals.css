@@ -78,6 +78,54 @@ main {
   animation: pane-breathe 2.2s ease-in-out infinite;
 }
 
+@keyframes menu-torch-glow {
+  0%,
+  100% {
+    opacity: 0.45;
+    filter: brightness(0.95);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.35);
+  }
+}
+
+@keyframes title-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.menu-torch-glow {
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(232, 228, 196, 0.38), transparent 44%),
+    radial-gradient(ellipse at 50% 48%, rgba(168, 186, 122, 0.4), transparent 72%);
+  mix-blend-mode: screen;
+  animation: menu-torch-glow 7s ease-in-out infinite;
+}
+
+.title-mark {
+  animation: title-float 5.4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.title-mark-face {
+  display: block;
+  transform-origin: center;
+  transition:
+    filter 280ms ease,
+    transform 280ms ease;
+}
+
+.title-mark-face:hover {
+  transform: scale(1.03);
+  filter: brightness(1.1);
+}
+
 .ag-slider {
   -webkit-appearance: none;
   appearance: none;
@@ -125,7 +173,9 @@ main {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pane-thinking {
+  .pane-thinking,
+  .menu-torch-glow,
+  .title-mark {
     animation: none;
   }
 }

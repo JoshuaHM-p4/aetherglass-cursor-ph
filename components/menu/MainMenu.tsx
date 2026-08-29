@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type JSX } from 'react';
 import logo from '../../app/logo-horizontal.png';
 import { playFileSfx, preloadFileSfx } from '../../game/systems/fileSfx';
+import { playTitleMusic, stopTitleMusic, unlockTitleMusic } from '../../game/systems/titleMusic';
 import { NAME_MAX, sanitizePlayerName } from '../../lib/client/playerName';
 import { setPlaying } from '../../lib/client/play';
 import {
@@ -37,6 +38,15 @@ export default function MainMenu(): JSX.Element {
 
   useEffect(() => {
     preloadFileSfx();
+    playTitleMusic();
+    const unlock = () => unlockTitleMusic();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      stopTitleMusic();
+    };
   }, []);
 
   useEffect(() => {
@@ -67,7 +77,7 @@ export default function MainMenu(): JSX.Element {
   }, [view, settingsOpen, erasing]);
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-20" data-menu>
+    <div className="pointer-events-auto absolute inset-0 z-20 bg-[#0b0d14]" data-menu>
       <img
         src="/assets/background/menu-bg-1920x1080.png"
         srcSet="/assets/background/menu-bg-1920x1080.png 1920w, /assets/background/menu-bg-2560x1440.png 2560w"
@@ -76,7 +86,8 @@ export default function MainMenu(): JSX.Element {
         className="absolute inset-0 h-full w-full object-cover"
         style={{ imageRendering: 'pixelated' }}
       />
-      <div className="absolute inset-0 bg-black/45" />
+      <div className="absolute inset-0 bg-black/18" />
+      <div className="menu-torch-glow pointer-events-none absolute inset-0" />
 
       <div className="absolute top-5 right-5 z-30">
         <SettingsButton open={settingsOpen} onClick={() => setSettings(!settingsOpen)} />
@@ -170,15 +181,17 @@ export default function MainMenu(): JSX.Element {
 function TitleView({ onPlay }: { onPlay: () => void }): JSX.Element {
   return (
     <div className="flex flex-col items-center gap-10">
-      <img
-        src={logo.src}
-        alt="Aetherglass"
-        width={logo.width}
-        height={logo.height}
-        className="h-auto w-[min(560px,88vw)] mix-blend-screen"
-        style={{ imageRendering: 'pixelated' }}
-        draggable={false}
-      />
+      <div className="title-mark">
+        <img
+          src={logo.src}
+          alt="Aetherglass"
+          width={logo.width}
+          height={logo.height}
+          className="title-mark-face h-auto w-[min(560px,88vw)] mix-blend-screen"
+          style={{ imageRendering: 'pixelated' }}
+          draggable={false}
+        />
+      </div>
       <button
         type="button"
         onClick={onPlay}
