@@ -28,6 +28,7 @@
 // "no unguarded mutation" expressed as a type rather than a code review.
 // ===========================================================================
 
+import { EXIT_TILE, ROOM_SIZE } from '../dungeon/const';
 import { recipe } from './recipes';
 import { isKnownItem } from './registry';
 import { bagHasRoomFor, findItem, heldQty, isAdjacent } from './select';
@@ -51,14 +52,10 @@ type Guard<A extends Action> = (state: GameState, action: A) => CheckResult;
  */
 type Guards = { [K in Action['type']]: Guard<Extract<Action, { type: K }>> };
 
-/** Internal resolution of the hardcoded H1/H2 map. Collision is Phaser's job. */
-const MAP_TX = 30;
-const MAP_TY = 17;
-
 export const guards: Guards = {
   /** Bounds and collision are Phaser's job; the sim only rejects impossible tiles. */
   MOVE: (_state, action) => {
-    if (action.tx < 0 || action.tx >= MAP_TX || action.ty < 0 || action.ty >= MAP_TY) {
+    if (action.tx < 0 || action.tx >= ROOM_SIZE || action.ty < 0 || action.ty >= ROOM_SIZE) {
       return fail('not_nearby');
     }
     return PASS;
@@ -136,6 +133,33 @@ export const guards: Guards = {
     return PASS;
   },
 
+  ENTER_PASSAGE: (state, action) => {
+    const room = state.dungeon.rooms[state.player.roomId];
+    if (!room) return fail('no_such_entity');
+    const passage = room.exits[action.dir];
+    if (!passage) return fail('not_nearby');
+    const edge = EXIT_TILE[action.dir];
+    if (state.player.tx !== edge.tx || state.player.ty !== edge.ty) return fail('not_nearby');
+    if (passage.lock !== 'open') return fail('locked');
+    return PASS;
+  },
+
+  GAIN_HEART: () => PASS,
+
+  MOVE_ENTITY: (state, action) => {
+    const entity = state.entities[action.entityId];
+    if (!entity) return fail('no_such_entity');
+    if (!entity.tags.includes('ghost')) return fail('wrong_kind');
+    if (entity.state === 'dead') return fail('already_dead');
+    if (action.tx < 0 || action.tx >= ROOM_SIZE || action.ty < 0 || action.ty >= ROOM_SIZE) {
+      return fail('not_nearby');
+    }
+    if (!state.dungeon.rooms[action.roomId]) return fail('no_such_entity');
+    return PASS;
+  },
+
+  RETURN_FOUNTAIN: () => PASS,
+
   /** set_flag is restricted to a fixed enum: QUEST_FLAGS. Otherwise `unknown_flag`. */
   SET_FLAG: (_state, action) => (isQuestFlag(action.flag) ? PASS : fail('unknown_flag')),
 
@@ -185,7 +209,7 @@ export function check(state: GameState, action: Action): CheckResult {
 // Internal to this file's guards, exported only where a non-Action caller genuinely
 // needs the same judgement (tools.ts `offer_choices`, the LDtk loader's validation).
 
-const SEAL_TAGS = new Set(['sealed', 'locked', 'barred', 'runed', 'frozen']);
+const SEAL_TAGS = new Set(['sealed', 'locked', 'barred', 'runed', 'frozen', 'master_lock']);
 
 /**
  * Does this item's tag set defeat this obstacle's tag set? The whole of the
@@ -210,6 +234,8 @@ export function defeatsSeal(itemTags: ItemTag[], obstacleTags: string[]): CheckR
         ? has('pry') || has('burning') || (has('sharp') && has('heavy'))
         : seal === 'locked'
           ? has('key') || (has('pry') && obstacleTags.includes('fragile'))
+          : seal === 'master_lock'
+            ? has('master_key')
           : seal === 'barred'
             ? has('heavy') || has('blunt')
             : seal === 'runed'
@@ -227,6 +253,8 @@ export const QUEST_FLAGS = [
   'shrine_used',
   'lockbox_looted',
   'knows_the_seam',
+  'intro_done',
+  'boss_dead',
 ] as const;
 export type QuestFlag = (typeof QUEST_FLAGS)[number];
 

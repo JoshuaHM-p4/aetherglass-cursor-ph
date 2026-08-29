@@ -4,7 +4,7 @@
 
 import Phaser from 'phaser';
 
-const KEY = 'tex-room-fade';
+const KEY = 'tex-room-fade-12';
 /** World pixels of wrap outside the map. ~1.5 tiles; readable at CAMERA_ZOOM 2. */
 const PAD = 24;
 /** Darken the outer wall pixels so bright stone doesn't sit flush on the void. */
@@ -88,7 +88,7 @@ export function plantRoomFade(
     tile: number;
     wallKeyAt: (tx: number, ty: number) => string;
   },
-): void {
+): Phaser.GameObjects.Image | null {
   const worldW = opts.mapW * opts.tile;
   const worldH = opts.mapH * opts.tile;
   const tw = worldW + PAD * 2;
@@ -114,7 +114,7 @@ export function plantRoomFade(
     };
 
     const canvas = scene.textures.createCanvas(KEY, tw, th);
-    if (!canvas) return;
+    if (!canvas) return null;
     const ctx = canvas.context;
     const img = ctx.createImageData(tw, th);
     const out = img.data;
@@ -149,5 +149,5 @@ export function plantRoomFade(
   }
 
   // Above walls (rim darkening), below torches / entities / player.
-  scene.add.image(-PAD, -PAD, KEY).setOrigin(0, 0).setDepth(1);
+  return scene.add.image(-PAD, -PAD, KEY).setOrigin(0, 0).setDepth(1);
 }

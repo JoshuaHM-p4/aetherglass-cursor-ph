@@ -64,6 +64,7 @@ export function loadLevel(json: LdtkJson): LoadedLevel {
       state: 'idle',
       tx: Math.floor(e.px[0] / 16),
       ty: Math.floor(e.px[1] / 16),
+      roomId: 'r_0_0',
       locked: field<boolean>(e, 'locked') ?? false,
       contents,
       paneWorthy: field<boolean>(e, 'paneWorthy') ?? false,

@@ -8,15 +8,12 @@
 // Overworld joins the scene list at H2; Boot alone proves the canvas at H0.
 
 import Phaser from 'phaser';
+import { GAME_HEIGHT, GAME_WIDTH } from './const';
 import { Boot } from './scenes/Boot';
 import { Preload } from './scenes/Preload';
 import { Overworld } from './scenes/Overworld';
 
-export const GAME_WIDTH = 480;
-export const GAME_HEIGHT = 270;
-export const TILE = 16;
-/** Integer zoom so a 30×17 floor is larger than the view and the camera can follow. */
-export const CAMERA_ZOOM = 2;
+export { CAMERA_ZOOM, GAME_HEIGHT, GAME_WIDTH, TILE } from './const';
 
 export function StartGame(parent: string): Phaser.Game {
   return new Phaser.Game({

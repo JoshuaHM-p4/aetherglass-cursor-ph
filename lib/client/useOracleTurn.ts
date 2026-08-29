@@ -18,6 +18,7 @@ import {
   getActiveSessionId,
   getSession,
   putSession,
+  requestSessionDismiss,
   setActiveSessionId,
   setSessionDismissHandler,
   type StoredPaneSession,
@@ -25,6 +26,7 @@ import {
 import { isRestatedNarration, shapePaneText } from './paneText';
 import type { PrefetchController } from './prefetch';
 import { createOracleTransport } from './transport';
+import { INTRO_BEATS, INTRO_ENTITY_ID } from '../oracle/intro';
 
 /** What the glass is doing. Drives the breathing blur and the input's disabled state. */
 export type PaneStatus = 'asleep' | 'ready' | 'thinking' | 'streaming' | 'error';
@@ -53,6 +55,8 @@ export interface OracleTurnApi {
   choose(choiceId: string): void;
   look(entityId: string): void;
   retry(): void;
+  /** Scripted fountain wake; Enter advances. Null when the live oracle is in charge. */
+  introBeat: number | null;
 }
 
 const PREFETCH_UNARMED: PrefetchController = {
@@ -131,6 +135,9 @@ export function useOracleTurn(): OracleTurnApi {
   const rackRef = useRef(rack);
   rackRef.current = rack;
   const [activeEntityId, setActiveEntity] = useState<string | null>(getActiveSessionId);
+  const [introBeat, setIntroBeat] = useState<number | null>(null);
+  const introBeatRef = useRef<number | null>(null);
+  introBeatRef.current = introBeat;
 
   const frozenRefusals = useRef<Record<string, Array<{ action: string; reason: string }>>>({});
   const liveRefusals = useRef<Array<{ action: string; reason: string }>>([]);
@@ -244,6 +251,24 @@ export function useOracleTurn(): OracleTurnApi {
     const entity = world().entities[entityId];
     if (!entity) return;
 
+    if (!world().flags.intro_done && entityId === INTRO_ENTITY_ID) {
+      parkCurrent();
+      setActiveSessionId(entityId);
+      setActiveEntity(entityId);
+      streamOwnerRef.current = entityId;
+      freezeRefusals();
+      setRack(null);
+      setMessagesRef.current([]);
+      setIntroBeat(0);
+      setPaneTyping(true);
+      bus.emit('pane:awake', { open: true, reason: 'interact' });
+      bus.emit('pane:focus', { entityId, style: 'spotlight' });
+      bus.emit('pane:intro', { cue: 'hey' });
+      return;
+    }
+
+    if (introBeatRef.current !== null) return;
+
     if (streaming) {
       if (streamOwnerRef.current === entityId) {
         setActiveSessionId(entityId);
@@ -290,6 +315,36 @@ export function useOracleTurn(): OracleTurnApi {
   useEffect(() => bus.on('world:interact', ({ entityId }) => lookRef.current(entityId)), []);
 
   useEffect(() => {
+    return bus.on('world:ready', () => {
+      if (!world().flags.intro_done) lookRef.current(INTRO_ENTITY_ID);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (introBeat === null) return;
+    setPaneTyping(true);
+    const finish = () => {
+      gameStore.getState().dispatch({ type: 'SET_FLAG', flag: 'intro_done', value: true }, 'keyboard');
+      setIntroBeat(null);
+      setPaneTyping(false);
+      bus.emit('pane:intro', { cue: 'done' });
+      requestSessionDismiss();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' && event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Escape' || introBeat + 1 >= INTRO_BEATS.length) {
+        finish();
+        return;
+      }
+      setIntroBeat(introBeat + 1);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [introBeat]);
+
+  useEffect(() => {
     setSessionDismissHandler(() => {
       const id = getActiveSessionId();
       if (!id) return;
@@ -332,7 +387,13 @@ export function useOracleTurn(): OracleTurnApi {
 
   const sessionOpen = activeEntityId !== null;
   const messages: PaneMessage[] = [];
-  if (sessionOpen) {
+  if (introBeat !== null) {
+    for (let i = 0; i <= introBeat; i++) {
+      const beat = INTRO_BEATS[i];
+      if (!beat) continue;
+      messages.push({ id: `intro-${beat.id}`, role: 'pane', text: beat.text, refusals: [] });
+    }
+  } else if (sessionOpen) {
     for (const message of uiMessages) {
       if (message.role !== 'user' && message.role !== 'assistant') continue;
       const role = message.role === 'user' ? 'player' : 'pane';
@@ -354,6 +415,7 @@ export function useOracleTurn(): OracleTurnApi {
 
   let status: PaneStatus;
   if (!sessionOpen) status = 'asleep';
+  else if (introBeat !== null) status = 'ready';
   else if (chatStatus === 'submitted') status = 'thinking';
   else if (chatStatus === 'streaming') status = 'streaming';
   else if (chatStatus === 'error') status = 'error';
@@ -412,6 +474,7 @@ export function useOracleTurn(): OracleTurnApi {
     retry() {
       void regenerate();
     },
+    introBeat,
   };
 }
 

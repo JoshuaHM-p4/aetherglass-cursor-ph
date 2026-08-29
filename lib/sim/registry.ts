@@ -71,6 +71,27 @@ export const ITEM_REGISTRY: Readonly<Record<string, ItemTemplate>> = {
     tags: ['burning', 'light'],
     stackable: true,
   },
+  key: {
+    id: 'key',
+    name: 'iron key',
+    kind: 'key',
+    tags: ['key'],
+    stackable: true,
+  },
+  master_key: {
+    id: 'master_key',
+    name: 'master key',
+    kind: 'key',
+    tags: ['master_key'],
+    stackable: false,
+  },
+  heart_container: {
+    id: 'heart_container',
+    name: 'heart container',
+    kind: 'relic',
+    tags: ['light'],
+    stackable: false,
+  },
 } as unknown as Readonly<Record<string, ItemTemplate>>;
 
 export type ItemId = keyof typeof ITEM_REGISTRY & string;

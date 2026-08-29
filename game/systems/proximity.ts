@@ -140,6 +140,7 @@ export function installProximitySystem(scene: Phaser.Scene): () => void {
     const state = world();
     let best: { id: string; score: number } | null = null;
     for (const entity of Object.values(state.entities)) {
+      if (entity.roomId !== state.player.roomId) continue;
       if (!isAdjacent(state, entity.id)) continue;
       const dx = entity.tx - state.player.tx;
       const dy = entity.ty - state.player.ty;

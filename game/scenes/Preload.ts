@@ -241,11 +241,21 @@ export class Preload extends Phaser.Scene {
     this.load.image('tex-door-open', tile(78));
     this.load.image('tex-shrine', tile(32));
     this.load.image('tex-torch', tile(130));
+    this.load.image('tex-ghost', tile(121));
+    this.load.image('tex-crab', tile(110));
+    this.load.image('tex-fountain', tile(56));
+    this.load.image('tex-heart', '/assets/items/heart_container.png');
     this.load.image('tex-item-sword', '/assets/items/sword_short.png');
+    this.load.audio('mus-fountain', '/assets/music/fairy_fountain.mp3');
+    this.load.audio('mus-cave', '/assets/music/cave.mp3');
+    this.load.audio('mus-boss', '/assets/music/dungeon_boss.mp3');
   }
 
   create(): void {
     if (!this.textures.exists('tex-player')) bakeGrey(this);
+    if (!this.textures.exists('tex-ghost')) bake(this, 'tex-ghost', 0xc5d0dc, 0x8aa0b4);
+    if (!this.textures.exists('tex-crab')) bake(this, 'tex-crab', 0xb85c38, 0x6e2c12);
+    if (!this.textures.exists('tex-fountain')) bake(this, 'tex-fountain', 0x5a8cff, 0xc9a86a);
     bakeSpot(this);
     bakeGlow(this);
     if (!bakeKeyed(this, 'tex-item-sword', 'tex-sword')) bakeFallbackSword(this);

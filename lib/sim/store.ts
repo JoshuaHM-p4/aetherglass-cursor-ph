@@ -28,6 +28,7 @@
 
 import { createStore } from 'zustand/vanilla';
 import { bus } from '../../game/EventBus';
+import { clearSave, writeSave } from '../client/save';
 import { applyAction, initialState } from './reducer';
 import { check } from './rules';
 import type {
@@ -99,8 +100,11 @@ export interface GameStore {
   /** Boot / LDtk load. Resets rev to 0 and the applied-verdict set. */
   hydrate(state: GameState): void;
 
-  /** Replay the last hydrated snapshot. Not an Action — the world is replaced, not mutated. */
+  /** Death / STAND: fountain, hp refilled, dungeon kept. */
   restart(): void;
+
+  /** Ctrl+Shift+Backspace. New seed, empty save. */
+  hardReset(): void;
 
   /** Enter on an adjacent entity. Not an Action: the target is UI fact, not world fact. */
   setInteractTarget(entityId: string | null): void;
@@ -120,6 +124,7 @@ export const gameStore = createStore<GameStore>((set, get) => {
       }
       const nextRev = rev + 1;
       set({ state: result.state, rev: nextRev });
+      writeSave(result.state);
       for (const event of result.events) bus.emit('sim:event', event);
       return { ok: true, events: result.events, rev: nextRev };
     },
@@ -145,10 +150,22 @@ export const gameStore = createStore<GameStore>((set, get) => {
       appliedKeys.clear();
       seed = structuredClone(state);
       set({ state, rev: 0 });
+      writeSave(state);
       bus.emit('sim:hydrated', { entityCount: Object.keys(state.entities).length });
     },
     restart() {
-      get().hydrate(structuredClone(seed));
+      const result = applyAction(get().state, { type: 'RETURN_FOUNTAIN', refillHp: true });
+      if (!result.ok) return;
+      appliedKeys.clear();
+      set({ state: result.state, rev: get().rev + 1 });
+      writeSave(result.state);
+      for (const event of result.events) bus.emit('sim:event', event);
+      bus.emit('sim:hydrated', { entityCount: Object.keys(result.state.entities).length });
+    },
+    hardReset() {
+      clearSave();
+      const fresh = initialState((Math.random() * 0xffffffff) >>> 0);
+      get().hydrate(fresh);
     },
     setInteractTarget(entityId) {
       const next = structuredClone(get().state);

@@ -1,5 +1,6 @@
 'use client';
 
+import { playFileSfx } from '../../game/systems/fileSfx';
 import { BAG_SLOTS } from '../../lib/sim/select';
 import { useGame } from '../useGame';
 import ItemIcon from './ItemIcon';
@@ -34,7 +35,11 @@ export default function BagGrid({
               <button
                 type="button"
                 disabled={!item && heldIndex === null}
+                onMouseEnter={() => {
+                  if (item) playFileSfx('cursor');
+                }}
                 onClick={(event) => {
+                  playFileSfx('select');
                   onSlot(i);
                   event.currentTarget.blur();
                 }}

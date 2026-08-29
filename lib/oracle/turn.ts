@@ -159,6 +159,7 @@ const snapshotSchema = z.object({
     hp: z.number(),
     hpMax: z.number(),
     paneIntegrity: z.number(),
+    roomId: z.string(),
     tx: z.number(),
     ty: z.number(),
     facing: z.enum(['up', 'down', 'left', 'right']),
@@ -169,6 +170,7 @@ const snapshotSchema = z.object({
       z.string().nullable(),
     ]),
   }).passthrough(),
+  dungeon: z.unknown(),
   entities: z.record(z.string(), z.unknown()),
   flags: z.record(z.string(), z.boolean()),
   log: z.array(z.string()),
@@ -222,7 +224,7 @@ export function parseOracleRequest(body: unknown): {
     : parsed.data.journal.entries;
   return {
     messages: parsed.data.messages,
-    snapshot: parsed.data.snapshot as GameState,
+    snapshot: parsed.data.snapshot as unknown as GameState,
     journal: {
       entries: journalEntries.map(e => ({
         turnId: e.turnId,

@@ -49,6 +49,10 @@ export function buildContextPacket(state: GameState, journal: PaneJournal): Cont
     focus: state.ui.interactTargetId,
     recentEvents: interleave(state.log.slice(-5), recentLines(journal, 5)),
     flags: pickPublicFlags(state.flags),
+    room: {
+      id: state.player.roomId,
+      kind: state.dungeon.rooms[state.player.roomId]?.kind ?? 'cave',
+    },
   };
 }
 

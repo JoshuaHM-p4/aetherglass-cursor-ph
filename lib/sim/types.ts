@@ -17,7 +17,7 @@
  */
 export type ItemTag =
   | 'pry' | 'sharp' | 'blunt' | 'burning' | 'arcane' | 'foul'
-  | 'key' | 'fragile' | 'heavy' | 'edible' | 'reagent' | 'light';
+  | 'key' | 'master_key' | 'fragile' | 'heavy' | 'edible' | 'reagent' | 'light';
 
 export type ItemKind = 'weapon' | 'tool' | 'consumable' | 'material' | 'key' | 'relic';
 
@@ -43,8 +43,10 @@ export interface Entity {
   name: string;
   tags: string[];             // 'sealed', 'runed', 'iron', 'wounded'
   state: EntityState;
-  tx: number;                 // tile coords
+  tx: number;                 // tile coords, local to roomId
   ty: number;
+  /** The 12×12 the sprite lives in. Ghost is the only entity that changes this. */
+  roomId: string;
   locked?: boolean;
   /** The ONLY item ids `apply_effect:grant` may produce from this entity. */
   contents?: string[];
@@ -58,11 +60,44 @@ export interface Entity {
 
 export type Facing = 'up' | 'down' | 'left' | 'right';
 
+export type RoomKind = 'fountain' | 'cave' | 'master';
+export type PassageLock = 'open' | 'key' | 'master';
+
+export interface Passage {
+  /** Neighbor room id, or null if that cell has not been generated yet. */
+  to: string | null;
+  lock: PassageLock;
+}
+
+export interface Room {
+  id: string;
+  kind: RoomKind;
+  gx: number;
+  gy: number;
+  exits: Record<Facing, Passage | null>;
+}
+
+export interface DungeonState {
+  seed: number;
+  /** Mulberry32 state. Mutated as rooms are carved so save/load stays deterministic. */
+  rng: number;
+  rooms: Record<string, Room>;
+  cap: number;
+  /** Room that owns the master-door passage, once it exists. */
+  masterDoorRoomId: string | null;
+  masterKeyPlaced: boolean;
+  lockedDoorCount: number;
+  keysPlaced: number;
+  caveCount: number;
+  ghostId: string | null;
+}
+
 export interface PlayerState {
   hp: number;
   hpMax: number;
   /** 0-100. Drives the crack overlay AND the Pane's voice in the system prompt. */
   paneIntegrity: number;
+  roomId: string;
   tx: number;
   ty: number;
   facing: Facing;
@@ -72,6 +107,7 @@ export interface PlayerState {
 
 export interface GameState {
   player: PlayerState;
+  dungeon: DungeonState;
   entities: Record<string, Entity>;
   flags: Record<string, boolean>;
   /** Last ~20 human-readable events. The tail feeds the context packet. */
@@ -102,7 +138,11 @@ export type Action =
   // AGENTS.md forbids and ARCHITECTURE §1.3 calls out by name.
   | { type: 'STRIKE_ENTITY'; entityId: string; amount: number; withItemId: string | null }
   | { type: 'SET_HOTBAR'; slot: 0 | 1 | 2; itemId: string | null }
-  | { type: 'SWAP_BAG'; a: number; b: number };
+  | { type: 'SWAP_BAG'; a: number; b: number }
+  | { type: 'ENTER_PASSAGE'; dir: Facing }
+  | { type: 'GAIN_HEART' }
+  | { type: 'MOVE_ENTITY'; entityId: string; roomId: string; tx: number; ty: number }
+  | { type: 'RETURN_FOUNTAIN'; refillHp: boolean };
 
 /** snake_case, surfaced to the model verbatim so it can narrate its own failure. */
 export type RejectReason =
@@ -128,7 +168,11 @@ export type SimEvent =
   // [+] Phaser needs a hit-spark and a knockback tween at the moment of impact,
   // distinct from the player being damaged.
   | { type: 'entity_struck'; entityId: string; amount: number; hpLeft: number }
-  | { type: 'player_died'; source: string };
+  | { type: 'player_died'; source: string }
+  | { type: 'room_entered'; roomId: string; kind: RoomKind }
+  | { type: 'heart_gained'; hpMax: number }
+  | { type: 'entity_moved'; entityId: string; roomId: string; tx: number; ty: number }
+  | { type: 'returned_fountain' };
 
 export interface ActionResult {
   state: GameState;
@@ -172,4 +216,5 @@ export interface ContextPacket {
   focus: string | null;
   recentEvents: string[];
   flags: Record<string, boolean>;
+  room: { id: string; kind: RoomKind };
 }

@@ -73,6 +73,8 @@ export interface BusEvents {
    */
   'world:proximity_enter': { entityId: string; paneWorthy: boolean };
   'world:proximity_exit': { entityId: string };
+  /** Player stepped onto an open mid-wall opening. */
+  'world:enter_passage': { dir: Facing };
 
   // ------------------------------------------------------------------ pane -> world
   // Producer: React/the Pane. Consumer: Phaser.
@@ -85,10 +87,14 @@ export interface BusEvents {
   'pane:awake': { open: boolean; reason: 'interact' | 'typed' | 'closed' };
   /** Breathing blur is CSS; this is for the in-world glass shimmer only. */
   'pane:thinking': { thinking: boolean };
+  /** Scripted fountain wake. Sound plays Hey; the Pane advances beats locally. */
+  'pane:intro': { cue: 'hey' | 'done' };
 
   // ------------------------------------------------------------------ hud -> world
   /** Tab. Phaser dims and stops accepting movement input while the bag is open. */
   'hud:bag_toggled': { open: boolean };
+  'hud:settings_toggled': { open: boolean };
+  'hud:toast': { text: string };
 }
 
 export type BusEventName = keyof BusEvents;
@@ -170,6 +176,9 @@ export function installWorldAdapter(): () => void {
   const offClear = bus.on('world:interact_clear', () => {
     gameStore.getState().setInteractTarget(null);
   });
+  const offPassage = bus.on('world:enter_passage', ({ dir }) => {
+    gameStore.getState().dispatch({ type: 'ENTER_PASSAGE', dir }, 'keyboard');
+  });
 
   return () => {
     offTile();
@@ -177,6 +186,7 @@ export function installWorldAdapter(): () => void {
     offHurt();
     offInteract();
     offClear();
+    offPassage();
   };
 }
 

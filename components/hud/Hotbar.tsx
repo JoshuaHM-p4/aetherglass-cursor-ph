@@ -1,5 +1,6 @@
 'use client';
 
+import { playFileSfx } from '../../game/systems/fileSfx';
 import { ITEM_REGISTRY } from '../../lib/sim/registry';
 import { useGame } from '../useGame';
 import ItemIcon from './ItemIcon';
@@ -25,12 +26,15 @@ export default function Hotbar({
           <li key={i}>
             <button
               type="button"
+              onMouseEnter={() => playFileSfx('cursor')}
               onClick={(event) => {
+                playFileSfx('select');
                 onSelect(i);
                 event.currentTarget.blur();
               }}
               onContextMenu={(event) => {
                 event.preventDefault();
+                playFileSfx('select');
                 onClear(i);
                 event.currentTarget.blur();
               }}

@@ -14,6 +14,9 @@ const LORE: Partial<Record<string, string>> = {
   potion_dim: 'The liquid forgets the light it used to hold.',
   pane_shard: 'A splinter of the glass you carry. It hums when you bleed.',
   torch_stub: 'Char and wire. It remembers fire if asked correctly.',
+  key: 'Cut for a lock that is still waiting.',
+  master_key: 'Heavier than it looks. The dungeon itself was the mould.',
+  heart_container: 'A sealed well of extra life. It does not fit in a pocket.',
 };
 
 const HIDDEN: Partial<Record<string, string[]>> = {

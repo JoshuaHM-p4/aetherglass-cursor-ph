@@ -6,7 +6,7 @@
 'use client';
 
 import { motion, useReducedMotion } from 'motion/react';
-import { useEffect, useLayoutEffect, useRef, type JSX, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type WheelEvent } from 'react';
 import { paneParagraphs } from '../../lib/client/paneText';
 import {
   useOracleTurn,
@@ -15,23 +15,59 @@ import {
   type PaneStatus,
 } from '../../lib/client/useOracleTurn';
 import { bus } from '../../game/EventBus';
+import { playFileSfx } from '../../game/systems/fileSfx';
 import { setPaneTyping } from '../../game/inputCapture';
 import { requestSessionDismiss } from '../../lib/client/paneSessions';
 import { paneBoxBesidePlayer, readPlayerAnchor } from '../../game/playerAnchor';
 import { useGame } from '../useGame';
 import ChoiceRack from './ChoiceRack';
 
+type PanePage = { player: PaneMessage | null; pane: PaneMessage | null };
+
+function paginate(messages: readonly PaneMessage[]): PanePage[] {
+  const pages: PanePage[] = [];
+  let pending: PaneMessage | null = null;
+  for (const message of messages) {
+    if (message.role === 'player') {
+      if (pending) pages.push({ player: pending, pane: null });
+      pending = message;
+      continue;
+    }
+    pages.push({ player: pending, pane: message });
+    pending = null;
+  }
+  if (pending) pages.push({ player: pending, pane: null });
+  return pages;
+}
+
+function onPageWheel(
+  event: WheelEvent<HTMLDivElement>,
+  scroller: HTMLDivElement | null,
+  count: number,
+  setPage: (fn: (page: number) => number) => void,
+): void {
+  if (count < 2) return;
+  if (scroller && scroller.scrollHeight > scroller.clientHeight + 4) return;
+  if (Math.abs(event.deltaY) < 10) return;
+  event.preventDefault();
+  const dir = event.deltaY > 0 ? 1 : -1;
+  setPage((page) => Math.max(0, Math.min(count - 1, page + dir)));
+}
+
 export default function Pane(): JSX.Element {
-  const { messages, status, rack, ask, choose, activeEntityId } = useOracleTurn();
+  const { messages, status, rack, ask, choose, activeEntityId, introBeat } = useOracleTurn();
   const integrity = useGame((s) => s.state.player.paneIntegrity);
   const entityName = useGame((s) =>
     activeEntityId ? (s.state.entities[activeEntityId]?.name ?? null) : null,
   );
   const thinking = status === 'thinking';
   const lastId = messages.at(-1)?.id;
-  const tail = messages.at(-1)?.text ?? '';
   const boxRef = useRef<HTMLDivElement>(null);
-  const scrollerRef = useRef<HTMLOListElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const pages = useMemo(() => paginate(messages), [messages]);
+  const [page, setPage] = useState(0);
+  const current = pages[page] ?? pages.at(-1) ?? null;
+  const onLatest = pages.length === 0 || page === pages.length - 1;
 
   useEffect(() => {
     bus.emit('pane:thinking', { thinking: status === 'thinking' || status === 'streaming' });
@@ -96,11 +132,14 @@ export default function Pane(): JSX.Element {
     return () => cancelAnimationFrame(raf);
   }, [activeEntityId]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
+    setPage(Math.max(0, pages.length - 1));
+  }, [pages.length, lastId]);
+
+  useEffect(() => {
     const el = scrollerRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages.length, tail, status, rack?.status]);
+    if (el) el.scrollTop = 0;
+  }, [page, lastId]);
 
   if (!activeEntityId) return <></>;
 
@@ -113,25 +152,65 @@ export default function Pane(): JSX.Element {
       style={{ visibility: 'hidden' }}
     >
       <Glass integrity={integrity} status={status} subject={entityName}>
-        <ol
-          ref={scrollerRef}
-          className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1"
-        >
-          {messages.map((m) => (
-            <li key={m.id}>
-              <PaneMessageView
-                {...m}
-                streaming={status === 'streaming' && m.role === 'pane' && m.id === lastId}
-              />
-            </li>
-          ))}
-        </ol>
-        {pending && (
+        <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
+          <div
+            ref={scrollerRef}
+            className="pane-scroll min-h-[3.5rem] flex-1 overflow-y-auto px-2 py-1.5"
+            onWheel={(event) => onPageWheel(event, scrollerRef.current, pages.length, setPage)}
+          >
+            {current && (
+              <div className="space-y-2.5">
+                {current.player && <PaneMessageView {...current.player} />}
+                {current.pane && (
+                  <PaneMessageView
+                    {...current.pane}
+                    streaming={status === 'streaming' && current.pane.id === lastId}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+          {pages.length > 1 && (
+            <ol
+              className="flex shrink-0 flex-col items-center justify-center gap-[5px] py-1"
+              aria-label="conversation pages"
+            >
+              {pages.map((_, i) => {
+                const active = i === page;
+                return (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      aria-label={`reply ${i + 1} of ${pages.length}`}
+                      aria-current={active}
+                      onClick={() => {
+                        setPage(i);
+                        playFileSfx('cursor');
+                      }}
+                      className={`block h-[5px] w-[5px] rounded-full border ${
+                        active
+                          ? 'border-amber-200 bg-amber-300 shadow-[0_0_6px_rgba(201,168,106,0.7)]'
+                          : 'border-amber-200/25 bg-amber-100/15 hover:bg-amber-200/40'
+                      }`}
+                    />
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </div>
+        {onLatest && pending && (
           <div className="shrink-0">
             <ChoiceRack rack={pending} onChoose={choose} />
           </div>
         )}
-        <PaneInput disabled={thinking} placeholder="speak" onSubmit={ask} />
+        {introBeat !== null ? (
+          <p className="mt-3 shrink-0 border-t border-amber-400/20 px-2 pt-2 font-pixel text-[9px] tracking-widest text-amber-100/40">
+            ENTER TO CONTINUE
+          </p>
+        ) : (
+          <PaneInput disabled={thinking} placeholder="speak" onSubmit={ask} />
+        )}
       </Glass>
     </div>
   );
@@ -150,7 +229,7 @@ export function Glass(props: {
   return (
     <motion.aside
       data-pane
-      className={`pane-glass pointer-events-auto relative flex min-h-0 max-h-[78vh] flex-col overflow-hidden px-4 py-3.5 ${
+      className={`pane-glass pointer-events-auto relative flex min-h-0 max-h-[78vh] flex-col overflow-hidden px-5 py-3.5 ${
         props.status === 'thinking' ? 'pane-thinking' : ''
       } ${dormant ? 'opacity-80' : 'opacity-100'}`}
       animate={
@@ -203,7 +282,7 @@ export function PaneMessageView(
 ): JSX.Element {
   if (props.role === 'player') {
     return (
-      <p className="font-pixel text-[10px] leading-snug text-white/45">
+      <p className="px-0.5 font-pixel text-[10px] leading-snug text-white/45">
         {props.text}
       </p>
     );
@@ -212,7 +291,7 @@ export function PaneMessageView(
   const stanzas = paneParagraphs(props.text);
   if (stanzas.length === 0) {
     return props.streaming ? (
-      <p className="font-pixel text-[11px] leading-[1.65] text-amber-50/90">
+      <p className="px-0.5 text-justify font-pixel text-[11px] leading-[1.65] text-amber-50/90">
         <span className="inline-block animate-pulse text-amber-300/80">▌</span>
       </p>
     ) : (
@@ -221,11 +300,11 @@ export function PaneMessageView(
   }
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2.5 px-0.5">
       {props.streaming ? (
         <div className="space-y-2.5">
           {stanzas.map((stanza, i) => (
-            <p key={i} className="font-pixel text-[11px] leading-[1.65] text-amber-50/90">
+            <p key={i} className="text-justify font-pixel text-[11px] leading-[1.65] text-amber-50/90">
               {stanza}
               {i === stanzas.length - 1 && (
                 <span className="ml-0.5 inline-block animate-pulse text-amber-300/80">▌</span>
@@ -256,10 +335,10 @@ function InkBleed({ text }: { text: string }) {
   const reduced = useReducedMotion();
   const words = text.length === 0 ? [] : text.split(/(\s+)/);
   if (reduced) {
-    return <p className="font-pixel text-[11px] leading-[1.65] text-amber-50/90">{text}</p>;
+    return <p className="text-justify font-pixel text-[11px] leading-[1.65] text-amber-50/90">{text}</p>;
   }
   return (
-    <p className="font-pixel text-[11px] leading-[1.65] text-amber-50/90">
+    <p className="text-justify font-pixel text-[11px] leading-[1.65] text-amber-50/90">
       {words.map((word, i) =>
         word.trim() === '' ? (
           <span key={i}>{word}</span>
@@ -323,7 +402,7 @@ function PaneInput({
         onBlur={() => setPaneTyping(false)}
         onKeyDown={keepKeys}
         onKeyUp={keepKeys}
-        className="w-full bg-transparent font-pixel text-[11px] text-amber-50/90 outline-none placeholder:text-amber-100/30 disabled:opacity-40"
+        className="w-full bg-transparent px-2 font-pixel text-[11px] text-amber-50/90 outline-none placeholder:text-amber-100/30 disabled:opacity-40"
         placeholder={placeholder}
       />
     </form>

@@ -2,23 +2,44 @@
 
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { bus } from '../../game/EventBus';
-import { cycleHotbar, getHotbarSlot, setBagOpen, setHotbarSlot } from '../../game/inputCapture';
+import { cycleHotbar, getHotbarSlot, setBagOpen, setHotbarSlot, setSettingsOpen } from '../../game/inputCapture';
+import { playFileSfx, preloadFileSfx } from '../../game/systems/fileSfx';
 import { readGame, useGame } from '../useGame';
 import BagGrid from './BagGrid';
 import Hearts from './Hearts';
 import Hotbar from './Hotbar';
+import SettingsModal, { SettingsButton } from './SettingsModal';
 
 export default function Hud(): JSX.Element {
   const hp = useGame((s) => s.state.player.hp);
   const [bagOpen, setOpen] = useState(false);
+  const [settingsOpen, setSettings] = useState(false);
   const [slot, setSlot] = useState(getHotbarSlot);
   const [heldIndex, setHeld] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const toggleBag = useCallback((open: boolean) => {
+    if (open) {
+      setSettings(false);
+      setSettingsOpen(false);
+    }
     setOpen(open);
     setBagOpen(open);
     if (!open) setHeld(null);
     bus.emit('hud:bag_toggled', { open });
+    playFileSfx(open ? 'open' : 'close');
+  }, []);
+
+  const toggleSettings = useCallback((open: boolean) => {
+    if (open) {
+      setOpen(false);
+      setBagOpen(false);
+      setHeld(null);
+    }
+    setSettings(open);
+    setSettingsOpen(open);
+    bus.emit('hud:settings_toggled', { open });
+    playFileSfx(open ? 'open' : 'close');
   }, []);
 
   const pickSlot = useCallback((next: number) => {
@@ -58,18 +79,35 @@ export default function Hud(): JSX.Element {
   );
 
   useEffect(() => {
+    preloadFileSfx();
+  }, []);
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.repeat) return;
       if (readGame().state.player.hp <= 0) return;
       const typing =
         event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+      if (event.key === 'Escape') {
+        if (settingsOpen) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          toggleSettings(false);
+          return;
+        }
+        if (typing || document.activeElement?.closest('[data-pane]')) return;
+        event.preventDefault();
+        toggleSettings(true);
+        return;
+      }
       if (event.key === 'Tab') {
+        if (settingsOpen) return;
         event.preventDefault();
         if (typing) return;
         toggleBag(!bagOpen);
         return;
       }
-      if (typing) return;
+      if (typing || settingsOpen) return;
       const fromDigit =
         event.code === 'Digit1' || event.code === 'Numpad1'
           ? 0
@@ -80,36 +118,62 @@ export default function Hud(): JSX.Element {
               : null;
       if (fromDigit !== null) {
         event.preventDefault();
+        playFileSfx(heldIndex !== null ? 'select' : 'cursor');
         stashInSlot(fromDigit);
         return;
       }
       if (event.key === 'q' || event.key === 'Q') {
         event.preventDefault();
+        playFileSfx('cursor');
         pickSlot(cycleHotbar(-1));
         return;
       }
       if (event.key === 'e' || event.key === 'E') {
         event.preventDefault();
+        playFileSfx('cursor');
         pickSlot(cycleHotbar(1));
       }
+      if (event.key === 'Backspace' && event.ctrlKey && event.shiftKey) {
+        event.preventDefault();
+        readGame().hardReset();
+        bus.emit('hud:toast', { text: 'run wiped' });
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [bagOpen, toggleBag, stashInSlot, pickSlot]);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [bagOpen, settingsOpen, heldIndex, toggleBag, toggleSettings, stashInSlot, pickSlot]);
 
   useEffect(() => {
     if (hp <= 0 && bagOpen) toggleBag(false);
-  }, [hp, bagOpen, toggleBag]);
+    if (hp <= 0 && settingsOpen) toggleSettings(false);
+  }, [hp, bagOpen, settingsOpen, toggleBag, toggleSettings]);
+
+  useEffect(() => {
+    let timer = 0;
+    const off = bus.on('hud:toast', ({ text }) => {
+      setToast(text);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setToast(null), 2200);
+    });
+    return () => {
+      off();
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   useEffect(
     () => () => {
       setBagOpen(false);
+      setSettingsOpen(false);
     },
     [],
   );
 
   return (
     <>
+      <div className="pointer-events-auto absolute top-5 right-5 z-30" data-hud>
+        <SettingsButton open={settingsOpen} onClick={() => toggleSettings(!settingsOpen)} />
+      </div>
       <div className="pointer-events-auto absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 flex-col items-start gap-1.5" data-hud>
         <Hearts />
         <div className="flex items-end gap-2">
@@ -152,6 +216,7 @@ export default function Hud(): JSX.Element {
           </button>
         </div>
       </div>
+      {settingsOpen && <SettingsModal onClose={() => toggleSettings(false)} />}
       {bagOpen && (
         <div
           className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-black/35"
@@ -159,6 +224,11 @@ export default function Hud(): JSX.Element {
         >
           <BagGrid heldIndex={heldIndex} onSlot={onBagSlot} />
         </div>
+      )}
+      {toast && (
+        <p className="pointer-events-none absolute top-6 left-1/2 z-40 -translate-x-1/2 font-pixel text-[10px] tracking-[0.2em] text-amber-100/80">
+          {toast}
+        </p>
       )}
     </>
   );

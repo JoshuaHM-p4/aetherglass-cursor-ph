@@ -114,7 +114,7 @@ export function buildSystemPrompt(args: {
     {
       id: 'world_state',
       stable: false,
-      text: `WORLD STATE\n${JSON.stringify(packet, null, 1)}`,
+      text: `WORLD STATE\nYou are in a ${packet.room.kind} (${packet.room.id}).\n${JSON.stringify(packet, null, 1)}`,
     },
     {
       id: 'journal',

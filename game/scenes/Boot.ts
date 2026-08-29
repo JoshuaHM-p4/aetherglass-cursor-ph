@@ -4,7 +4,7 @@
 // to Preload, which hands off to Overworld.
 
 import Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH } from '../main';
+import { GAME_HEIGHT, GAME_WIDTH } from '../const';
 
 export class Boot extends Phaser.Scene {
   constructor() {

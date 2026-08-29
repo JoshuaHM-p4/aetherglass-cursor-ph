@@ -14,6 +14,8 @@
 // arriving from the keyboard are user intent and SHOULD apply twice if pressed twice;
 // actions arriving from the Pane are a replay of a decision already made and must not.
 
+import { ARRIVAL_TILE, CRAB_ID, FOUNTAIN_ROOM_ID, FOUNTAIN_SPAWN, facingFromDoorId } from '../dungeon/const';
+import { bootFountain, ensureNeighbor } from '../dungeon/generate';
 import { recipe } from './recipes';
 import { instantiate } from './registry';
 import { check, LIMITS, QUEST_FLAGS } from './rules';
@@ -70,13 +72,23 @@ function appendLog(state: GameState, events: readonly SimEvent[]): void {
   }
 }
 
-function grant(state: GameState, itemId: string, qty: number): void {
+function gainHeart(state: GameState): SimEvent {
+  state.player.hpMax += 2;
+  state.player.hp += 2;
+  return { type: 'heart_gained', hpMax: state.player.hpMax };
+}
+
+function grant(state: GameState, itemId: string, qty: number): SimEvent[] {
+  if (itemId === 'heart_container') {
+    return [gainHeart(state), { type: 'item_gained', itemId }];
+  }
   const existing = findItem(state, itemId);
   if (existing?.stackable) {
     existing.qty += qty;
-    return;
+    return [{ type: 'item_gained', itemId }];
   }
   state.player.bag.push(instantiate(itemId, qty));
+  return [{ type: 'item_gained', itemId }];
 }
 
 function consume(state: GameState, itemId: string, qty: number): void {
@@ -118,8 +130,7 @@ function commit(state: GameState, action: Action): SimEvent[] {
     }
     case 'GRANT_ITEM': {
       const qty = action.qty ?? 1;
-      grant(state, action.itemId, qty);
-      return [{ type: 'item_gained', itemId: action.itemId }];
+      return grant(state, action.itemId, qty);
     }
     case 'CONSUME_ITEM': {
       const qty = action.qty ?? 1;
@@ -132,8 +143,7 @@ function commit(state: GameState, action: Action): SimEvent[] {
       const loot = entity.contents ?? [];
       const events: SimEvent[] = [{ type: 'container_opened', entityId: entity.id }];
       for (const itemId of loot) {
-        grant(state, itemId, 1);
-        events.push({ type: 'item_gained', itemId });
+        events.push(...grant(state, itemId, 1));
       }
       return events;
     }
@@ -141,12 +151,29 @@ function commit(state: GameState, action: Action): SimEvent[] {
       const entity = state.entities[action.entityId];
       entity.locked = false;
       entity.state = 'unlocked';
-      return [{ type: 'entity_state_changed', entityId: entity.id, state: 'unlocked' }];
+      const spendsKey =
+        entity.tags.includes('master_lock') ||
+        entity.tags.includes('key') ||
+        action.withItemId === 'key' ||
+        action.withItemId === 'master_key';
+      const events: SimEvent[] = [
+        { type: 'entity_state_changed', entityId: entity.id, state: 'unlocked' },
+      ];
+      if (spendsKey) {
+        consume(state, action.withItemId, 1);
+        events.push({ type: 'item_lost', itemId: action.withItemId });
+      }
+      const dir = facingFromDoorId(entity.id);
+      if (dir) {
+        const passage = state.dungeon.rooms[entity.roomId]?.exits[dir];
+        if (passage) passage.lock = 'open';
+      }
+      return events;
     }
     case 'CRAFT': {
       const rec = recipe(action.recipeId)!;
       for (const [id, qty] of Object.entries(rec.inputs)) consume(state, id, qty);
-      grant(state, rec.output, rec.outputQty);
+      void grant(state, rec.output, rec.outputQty);
       return [{ type: 'crafted', recipeId: rec.id, itemId: rec.output }];
     }
     case 'SET_FLAG': {
@@ -172,6 +199,10 @@ function commit(state: GameState, action: Action): SimEvent[] {
       if (entity.hp <= 0) {
         entity.state = 'dead';
         events.push({ type: 'entity_state_changed', entityId: entity.id, state: 'dead' });
+        if (entity.id === CRAB_ID) {
+          state.flags.boss_dead = true;
+          events.push({ type: 'flag_set', flag: 'boss_dead', value: true });
+        }
       }
       return events;
     }
@@ -189,6 +220,36 @@ function commit(state: GameState, action: Action): SimEvent[] {
       bag[action.a] = bag[action.b]!;
       bag[action.b] = tmp;
       return [];
+    }
+    case 'ENTER_PASSAGE': {
+      const dest = ensureNeighbor(state, state.player.roomId, action.dir);
+      state.player.roomId = dest.id;
+      const spawn = ARRIVAL_TILE[action.dir];
+      state.player.tx = spawn.tx;
+      state.player.ty = spawn.ty;
+      state.player.facing = action.dir;
+      return [{ type: 'room_entered', roomId: dest.id, kind: dest.kind }];
+    }
+    case 'GAIN_HEART': {
+      return [gainHeart(state)];
+    }
+    case 'MOVE_ENTITY': {
+      const entity = state.entities[action.entityId];
+      entity.roomId = action.roomId;
+      entity.tx = action.tx;
+      entity.ty = action.ty;
+      return [{ type: 'entity_moved', entityId: entity.id, roomId: action.roomId, tx: action.tx, ty: action.ty }];
+    }
+    case 'RETURN_FOUNTAIN': {
+      state.player.roomId = FOUNTAIN_ROOM_ID;
+      state.player.tx = FOUNTAIN_SPAWN.tx;
+      state.player.ty = FOUNTAIN_SPAWN.ty;
+      state.player.facing = 'down';
+      if (action.refillHp) state.player.hp = state.player.hpMax;
+      return [
+        { type: 'returned_fountain' },
+        { type: 'room_entered', roomId: FOUNTAIN_ROOM_ID, kind: 'fountain' },
+      ];
     }
   }
 }
@@ -223,81 +284,37 @@ export function describeEvent(state: GameState, event: SimEvent): string {
       return `struck the ${named(event.entityId)} for ${event.amount}`;
     case 'player_died':
       return `fell to the ${event.source}`;
+    case 'room_entered':
+      return `entered ${event.kind} ${event.roomId}`;
+    case 'heart_gained':
+      return `gained a heart container (${event.hpMax})`;
+    case 'entity_moved':
+      return `${named(event.entityId)} moved`;
+    case 'returned_fountain':
+      return 'returned to the fountain';
   }
 }
 
-/** Hand-authored opening state for H1/H2, before LDtk exists. Cut list item 5 lands here. */
-export function initialState(): GameState {
+/** Seeded fountain. Tests pass a fixed seed; a hard reset rolls a new one. */
+export const DEFAULT_SEED = 0xa37e11;
+
+export function initialState(seed: number = DEFAULT_SEED): GameState {
+  const boot = bootFountain(seed);
   const sword: Item = instantiate('sword_short');
   return {
     player: {
       hp: 6,
       hpMax: 6,
       paneIntegrity: 100,
-      tx: 5,
-      ty: 5,
+      roomId: boot.player.roomId,
+      tx: boot.player.tx,
+      ty: boot.player.ty,
       facing: 'down',
       bag: [sword],
       hotbar: ['sword_short', null, null],
     },
-    entities: {
-      chest_lockbox: {
-        id: 'chest_lockbox',
-        kind: 'container',
-        name: 'rusted lockbox',
-        tags: ['sealed', 'iron'],
-        state: 'idle',
-        tx: 6,
-        ty: 5,
-        locked: true,
-        contents: ['crowbar', 'ore_iron'],
-        paneWorthy: true,
-        seed: 'a cold draft comes from the seam',
-      },
-      chest_plain: {
-        id: 'chest_plain',
-        kind: 'container',
-        name: 'splintered crate',
-        tags: ['wood'],
-        state: 'idle',
-        tx: 3,
-        ty: 5,
-        contents: ['torch_stub'],
-      },
-      slime_01: {
-        id: 'slime_01',
-        kind: 'enemy',
-        name: 'grey slime',
-        tags: ['foul'],
-        state: 'idle',
-        tx: 5,
-        ty: 7,
-        hp: 3,
-        hpMax: 3,
-      },
-      door_barred: {
-        id: 'door_barred',
-        kind: 'door',
-        name: 'barred door',
-        tags: ['barred', 'wood'],
-        state: 'idle',
-        tx: 5,
-        ty: 2,
-        locked: true,
-      },
-      shrine_dim: {
-        id: 'shrine_dim',
-        kind: 'shrine',
-        name: 'dim shrine',
-        tags: ['runed', 'arcane'],
-        state: 'idle',
-        tx: 9,
-        ty: 3,
-        paneWorthy: true,
-        contents: ['pane_shard'],
-        seed: 'the glass hums here',
-      },
-    },
+    dungeon: boot.dungeon,
+    entities: boot.entities,
     flags: Object.fromEntries(QUEST_FLAGS.map((flag) => [flag, false])),
     log: [],
     ui: { interactTargetId: null, paneOpen: false, bagOpen: false },

@@ -3,6 +3,11 @@
 
 import Phaser from 'phaser';
 import { bus } from '../EventBus';
+import { gameStore } from '../../lib/sim/store';
+import { getSfxVolume } from './volume';
+import { playFileSfx, preloadFileSfx } from './fileSfx';
+
+export { playFileSfx } from './fileSfx';
 
 type Cue =
   | 'step_a'
@@ -35,6 +40,7 @@ let ctx: AudioContext | null = null;
 let bank: Bank | null = null;
 let glassOpen = false;
 let stepFlip = false;
+let lastHp = Infinity;
 
 function audio(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -136,7 +142,7 @@ function play(cue: Cue, rate = 1): void {
   src.buffer = bank[cue];
   src.playbackRate.value = rate;
   const gain = a.createGain();
-  gain.gain.value = VOL[cue];
+  gain.gain.value = VOL[cue] * getSfxVolume();
   src.connect(gain).connect(a.destination);
   src.start();
 }
@@ -149,6 +155,8 @@ export function playSfx(cue: 'swing' | 'hit'): void {
 export function installSoundSystem(scene: Phaser.Scene): () => void {
   const a = audio();
   if (a) bank = buildBank(a);
+  lastHp = gameStore.getState().state.player.hp;
+  preloadFileSfx();
 
   const unlock = () => {
     resume();
@@ -164,15 +172,38 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
   const offHurt = bus.on('world:player_hurt', () => play('hurt', 0.95 + Math.random() * 0.1));
   const offEvent = bus.on('sim:event', (event) => {
     if (event.type === 'container_opened') play('chest');
-    if (event.type === 'item_gained') play('pickup', 1 + Math.random() * 0.08);
+    if (event.type === 'item_gained') {
+      if (event.itemId === 'key') playFileSfx('key');
+      else if (event.itemId === 'heart_container') {
+        playFileSfx('heart');
+        playFileSfx('fanfare');
+      } else if (event.itemId === 'master_key') playFileSfx('secret');
+      else playFileSfx('fanfare', 0.7);
+    }
     if (event.type === 'entity_struck') play('hit', 0.94 + Math.random() * 0.12);
     if (event.type === 'pane_cracked') play('glass_close', 1.3);
     if (event.type === 'player_died') play('death');
+    if (event.type === 'entity_state_changed' && event.state === 'unlocked') {
+      const entity = gameStore.getState().state.entities[event.entityId];
+      playFileSfx(entity?.tags.includes('master_lock') ? 'dungeonDoor' : 'door');
+    }
+    if (event.type === 'room_entered' && event.kind === 'master') playFileSfx('secret');
+    if (event.type === 'damaged') {
+      const hp = gameStore.getState().state.player.hp;
+      if (hp > 0 && hp <= 2 && lastHp > 2) playFileSfx('lowHealth');
+      lastHp = hp;
+    }
+    if (event.type === 'healed' || event.type === 'returned_fountain' || event.type === 'heart_gained') {
+      lastHp = gameStore.getState().state.player.hp;
+    }
   });
   const offAwake = bus.on('pane:awake', ({ open }) => {
     if (open && !glassOpen) play('glass');
     if (!open && glassOpen) play('glass_close');
     glassOpen = open;
+  });
+  const offIntro = bus.on('pane:intro', ({ cue }) => {
+    if (cue === 'hey') playFileSfx('hey');
   });
 
   return () => {
@@ -180,6 +211,7 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
     offHurt();
     offEvent();
     offAwake();
+    offIntro();
     scene.input.off('pointerdown', unlock);
     window.removeEventListener('keydown', onKey);
   };

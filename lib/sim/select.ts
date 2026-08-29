@@ -47,6 +47,7 @@ export function nearestEntities(
 ): RankedEntity[] {
   const { tx, ty } = state.player;
   return Object.values(state.entities)
+    .filter((e) => e.roomId === state.player.roomId)
     .map((e): RankedEntity => ({ ...e, d: Math.max(Math.abs(e.tx - tx), Math.abs(e.ty - ty)) }))
     .sort((a, b) => a.d - b.d || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .slice(0, limit);
@@ -56,6 +57,7 @@ export function nearestEntities(
 export function distanceTo(state: GameState, entityId: string): number {
   const entity = state.entities[entityId];
   if (!entity) return Infinity;
+  if (entity.roomId !== state.player.roomId) return Infinity;
   const { tx, ty } = state.player;
   return Math.max(Math.abs(entity.tx - tx), Math.abs(entity.ty - ty));
 }
@@ -77,6 +79,7 @@ export function heldQty(state: GameState, itemId: string): number {
 
 /** Occupied slots vs BAG_SLOTS. A new stackable id needs a free slot; a top-up does not. */
 export function bagHasRoomFor(state: GameState, itemId: string): boolean {
+  if (itemId === 'heart_container') return true;
   const existing = findItem(state, itemId);
   if (existing?.stackable) return true;
   return state.player.bag.length < BAG_SLOTS;

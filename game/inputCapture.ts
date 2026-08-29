@@ -4,12 +4,17 @@
 import { world } from '../lib/sim/store';
 
 let bagOpen = false;
+let settingsOpen = false;
 let hotbarSlot = 0;
 /** True while the glass is holding the keyboard (focused speak field or thinking). */
 let paneTyping = false;
 
 export function setBagOpen(open: boolean): void {
   bagOpen = open;
+}
+
+export function setSettingsOpen(open: boolean): void {
+  settingsOpen = open;
 }
 
 export function setPaneTyping(on: boolean): void {
@@ -37,9 +42,17 @@ export function cycleHotbar(dir: 1 | -1): number {
  * True when arrows / Space / WASD must not move or swing: the player is typing in
  * the Pane, clicking a choice, looking at the bag, or has fallen.
  */
+/** True while a room wipe is swapping the 12×12. */
+let roomWiping = false;
+
+export function setRoomWiping(on: boolean): void {
+  roomWiping = on;
+}
+
 export function isWorldInputBlocked(): boolean {
+  if (roomWiping) return true;
   if (world().player.hp <= 0) return true;
-  if (bagOpen || paneTyping) return true;
+  if (bagOpen || settingsOpen || paneTyping) return true;
   if (typeof document === 'undefined') return false;
   const el = document.activeElement;
   if (!(el instanceof HTMLElement)) return false;

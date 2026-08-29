@@ -3,7 +3,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { useEffect, useState, type JSX } from 'react';
 import { bus } from '../../game/EventBus';
-import { setBagOpen } from '../../game/inputCapture';
+import { setBagOpen, setSettingsOpen } from '../../game/inputCapture';
 import { requestSessionDismiss } from '../../lib/client/paneSessions';
 import { readGame, useGame } from '../useGame';
 
@@ -25,6 +25,7 @@ export default function DeathScreen(): JSX.Element | null {
     }
     requestSessionDismiss();
     setBagOpen(false);
+    setSettingsOpen(false);
   }, [dead]);
 
   useEffect(() => {

@@ -1,27 +1,21 @@
 // game/scenes/Overworld.ts
 //
-// Where the store meets the scene graph. The most important twenty lines in the game
-// layer, because this is where "Phaser is downstream of the sim, not beside it" is either
-// true or a comment.
-//
-// HOW PHASER READS TRUTH: `gameStore.subscribe` in `create()`, torn down in `shutdown()`.
-// Not props (AGENTS.md #6 — the canvas takes none and never re-mounts), and not the bus
-// (facts are not moments). The subscription is coarse — one callback, diffed against the
-// previous state — because the number of sprites is ~30 and a per-entity selector web
-// costs more than the diff.
-//
-// WHAT IT SYNCS: entity `state` -> texture frame + physics body enabled. Player tile ->
-// nothing (Phaser owns the player's pixel position; the sim's `player.tx/ty` is a
-// downstream record of tile crossings, not the authority on where the sprite is). That
-// asymmetry is deliberate and is the only place the sim is NOT the source of truth: it
-// would otherwise mean quantising smooth movement through a reducer at 60fps.
+// One 12×12 at a time. Phaser is downstream of the sim: loadRoom reads
+// `world().dungeon.rooms[player.roomId]` and draws only that cell.
 
 import Phaser from 'phaser';
-import type { Entity, Facing, GameState } from '../../lib/sim/types';
+import {
+  ALL_FACINGS,
+  EXIT_TILE,
+  GHOST_ID,
+  ROOM_SIZE,
+  exitDirAt,
+} from '../../lib/dungeon/const';
+import type { Entity, Facing, GameState, Room } from '../../lib/sim/types';
 import { gameStore, world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
-import { CAMERA_ZOOM, TILE } from '../main';
-import { isWorldInputBlocked } from '../inputCapture';
+import { PLAYER_BODY, TILE, WALL_BODY } from '../const';
+import { isWorldInputBlocked, setRoomWiping } from '../inputCapture';
 import { requestSessionDismiss } from '../../lib/client/paneSessions';
 import { setPlayerAnchor, worldToOverlay } from '../playerAnchor';
 import { DEAD_TINT, installCombatSystem } from '../systems/combat';
@@ -30,6 +24,11 @@ import { attachProximityRings, installProximitySystem } from '../systems/proximi
 import { installSessionMarks } from '../systems/sessionMark';
 import { plantRoomFade } from '../systems/roomFade';
 import { installSoundSystem } from '../systems/sound';
+import { playRoomMusic } from '../systems/music';
+import { wipeRoom } from '../systems/veil';
+import { installSlimeAi } from '../systems/ai/slime';
+import { installGhostAi } from '../systems/ai/ghost';
+import { installCrabAi } from '../systems/ai/crab';
 
 export interface OverworldRefs {
   entityLayer: Phaser.GameObjects.Container;
@@ -37,20 +36,13 @@ export interface OverworldRefs {
   dimLayer: Phaser.GameObjects.Rectangle;
   spotlight: Phaser.GameObjects.Image;
   leaderLine: Phaser.GameObjects.Graphics;
+  walls: Phaser.Physics.Arcade.StaticGroup;
 }
 
-const MAP_W = 30;
-const MAP_H = 17;
 const SPEED = 80;
+const WORLD = ROOM_SIZE * TILE;
 
-/**
- * The one place an entity's `state` becomes pixels. Called on spawn as well as on the
- * diff, so a hydrate that lands a dead slime does not draw it alive.
- */
-function applyEntityState(
-  sprite: Phaser.Physics.Arcade.Sprite,
-  entity: Entity,
-): void {
+function applyEntityState(sprite: Phaser.Physics.Arcade.Sprite, entity: Entity): void {
   if (entity.state === 'dead') {
     sprite.setTint(DEAD_TINT).setAlpha(0.5);
     if (sprite.body) sprite.body.enable = false;
@@ -59,6 +51,11 @@ function applyEntityState(
   sprite.clearTint();
   if (entity.kind === 'container') {
     const open = entity.state === 'open';
+    if (entity.tags.includes('pickup')) {
+      sprite.setVisible(!open);
+      if (sprite.body) sprite.body.enable = !open;
+      return;
+    }
     if (entity.tags.includes('wood') && sprite.scene.textures.exists('tex-crate')) {
       sprite.setTexture('tex-crate');
     } else {
@@ -71,16 +68,26 @@ function applyEntityState(
     sprite.setTexture(
       open && sprite.scene.textures.exists('tex-door-open') ? 'tex-door-open' : 'tex-door',
     );
+    if (sprite.body) sprite.body.enable = !open;
   }
 }
 
 function textureFor(entity: Entity, textures: Phaser.Textures.TextureManager): string {
+  if (entity.tags.includes('ghost') && textures.exists('tex-ghost')) return 'tex-ghost';
+  if (entity.tags.includes('crab') && textures.exists('tex-crab')) return 'tex-crab';
+  if (entity.tags.includes('fountain') && textures.exists('tex-fountain')) return 'tex-fountain';
+  if (entity.tags.includes('heart_container') && textures.exists('tex-heart')) return 'tex-heart';
   if (entity.kind === 'container') {
+    if (entity.tags.includes('pickup') && entity.contents?.[0] === 'heart_container' && textures.exists('tex-heart')) {
+      return 'tex-heart';
+    }
     if (entity.tags.includes('wood') && textures.exists('tex-crate')) return 'tex-crate';
     return 'tex-chest';
   }
   if (entity.kind === 'door') return 'tex-door';
-  if (entity.kind === 'shrine') return 'tex-shrine';
+  if (entity.kind === 'shrine' || entity.kind === 'prop') {
+    return textures.exists('tex-fountain') ? 'tex-fountain' : 'tex-shrine';
+  }
   return 'tex-slime';
 }
 
@@ -93,9 +100,9 @@ function floorTexture(tx: number, ty: number, scene: Phaser.Scene): string {
 
 function wallTexture(tx: number, ty: number, scene: Phaser.Scene): string {
   const n = ty === 0;
-  const s = ty === MAP_H - 1;
+  const s = ty === ROOM_SIZE - 1;
   const w = tx === 0;
-  const e = tx === MAP_W - 1;
+  const e = tx === ROOM_SIZE - 1;
   const pick = (key: string) => (scene.textures.exists(key) ? key : 'tex-wall');
   if (n && w) return pick('tex-wall-nw');
   if (n && e) return pick('tex-wall-ne');
@@ -106,70 +113,72 @@ function wallTexture(tx: number, ty: number, scene: Phaser.Scene): string {
   return 'tex-wall';
 }
 
+function roomZoom(gameW: number, gameH: number): number {
+  return Math.max(1, Math.floor(Math.min(gameW, gameH) / WORLD));
+}
+
+/** Centre a smaller arcade box so a 16px sprite can walk a 16px doorway. */
+function insetBody(sprite: Phaser.Physics.Arcade.Sprite, size: number): void {
+  const body = sprite.body as Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | null;
+  if (!body) return;
+  body.setSize(size, size, true);
+}
+
 export class Overworld extends Phaser.Scene implements OverworldRefs {
   entityLayer!: Phaser.GameObjects.Container;
   player!: Phaser.Physics.Arcade.Sprite;
   dimLayer!: Phaser.GameObjects.Rectangle;
   spotlight!: Phaser.GameObjects.Image;
   leaderLine!: Phaser.GameObjects.Graphics;
+  walls!: Phaser.Physics.Arcade.StaticGroup;
   facing: Facing = 'down';
 
-  private walls!: Phaser.Physics.Arcade.StaticGroup;
+  private floorLayer!: Phaser.GameObjects.Container;
+  private fadeImage: Phaser.GameObjects.Image | null = null;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private lastTx = -1;
   private lastTy = -1;
+  private loadedRoomId: string | null = null;
   private prev: GameState | null = null;
   private unsubStore: (() => void) | null = null;
   private unsubHydrate: (() => void) | null = null;
   private unsubDied: (() => void) | null = null;
+  private unsubRoom: (() => void) | null = null;
   private teardownCombat: (() => void) | null = null;
   private teardownProximity: (() => void) | null = null;
   private teardownFocus: (() => void) | null = null;
   private teardownMarks: (() => void) | null = null;
   private teardownSound: (() => void) | null = null;
+  private teardownSlime: (() => void) | null = null;
+  private teardownGhost: (() => void) | null = null;
+  private teardownCrab: (() => void) | null = null;
 
   constructor() {
     super('Overworld');
   }
 
   create(): void {
-    this.drawFloor();
+    this.floorLayer = this.add.container(0, 0);
     this.walls = this.physics.add.staticGroup();
-    for (let tx = 0; tx < MAP_W; tx++) {
-      this.placeWall(tx, 0);
-      this.placeWall(tx, MAP_H - 1);
-    }
-    for (let ty = 1; ty < MAP_H - 1; ty++) {
-      this.placeWall(0, ty);
-      this.placeWall(MAP_W - 1, ty);
-    }
-    plantRoomFade(this, {
-      mapW: MAP_W,
-      mapH: MAP_H,
-      tile: TILE,
-      wallKeyAt: (tx, ty) => wallTexture(tx, ty, this),
-    });
+    this.entityLayer = this.add.container(0, 0);
 
     const start = world().player;
     this.facing = start.facing;
     this.player = this.physics.add.sprite(start.tx * TILE + 8, start.ty * TILE + 8, 'tex-player');
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(10);
+    insetBody(this.player, PLAYER_BODY);
     this.physics.add.collider(this.player, this.walls);
 
-    const worldW = MAP_W * TILE;
-    const worldH = MAP_H * TILE;
-    this.physics.world.setBounds(0, 0, worldW, worldH);
-    this.cameras.main.setZoom(CAMERA_ZOOM);
+    this.physics.world.setBounds(0, 0, WORLD, WORLD);
     this.cameras.main.setRoundPixels(true);
     this.cameras.main.setSize(this.scale.gameSize.width, this.scale.gameSize.height);
-    this.cameras.main.startFollow(this.player, true, 1, 1);
+    this.lockCamera();
     this.scale.on('resize', this.onResize, this);
 
-    this.entityLayer = this.add.container(0, 0);
     this.dimLayer = this.add
-      .rectangle(0, 0, worldW, worldH, 0x000000, 0)
+      .rectangle(0, 0, WORLD, WORLD, 0x000000, 0)
       .setOrigin(0, 0)
       .setDepth(20);
     this.spotlight = this.add.image(0, 0, 'tex-spot').setVisible(false).setDepth(21);
@@ -186,21 +195,32 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     ) as Phaser.Types.Input.Keyboard.CursorKeys;
     this.wasd = this.input.keyboard!.addKeys('W,A,S,D', false) as typeof this.wasd;
 
-    this.plantTorches();
-    this.spawnEntities();
+    this.loadRoom(start.roomId, true);
     this.teardownCombat = installCombatSystem(this);
     this.teardownProximity = installProximitySystem(this);
     this.teardownFocus = installFocusSystem(this);
     this.teardownMarks = installSessionMarks(this);
     this.teardownSound = installSoundSystem(this);
+    this.teardownSlime = installSlimeAi(this);
+    this.teardownGhost = installGhostAi(this);
+    this.teardownCrab = installCrabAi(this);
 
     this.unsubStore = gameStore.subscribe(() => {
       this.syncFromStore();
     });
 
     this.unsubHydrate = bus.on('sim:hydrated', () => {
-      this.resetPlayer();
-      this.spawnEntities();
+      this.loadRoom(world().player.roomId, true);
+    });
+    this.unsubRoom = bus.on('sim:event', (event) => {
+      if (event.type === 'room_entered' && event.roomId !== this.loadedRoomId) {
+        setRoomWiping(true);
+        wipeRoom(
+          this,
+          () => this.loadRoom(event.roomId, true),
+          () => setRoomWiping(false),
+        );
+      }
     });
     this.unsubDied = bus.on('sim:event', (event) => {
       if (event.type !== 'player_died') return;
@@ -210,10 +230,31 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       this.player.setAngle(90);
     });
     this.prev = world();
-    // Phaser emits SHUTDOWN but never calls the method, and a restarted scene that
-    // subscribed twice moves the player two tiles per keypress.
     this.events.once('shutdown', this.shutdown, this);
     bus.emit('world:ready', { sceneKey: 'Overworld' });
+  }
+
+  loadRoom(roomId: string, snapPlayer: boolean): void {
+    const state = world();
+    const room = state.dungeon.rooms[roomId];
+    if (!room) return;
+    this.loadedRoomId = roomId;
+    this.clearDecor();
+    this.drawFloor();
+    this.buildWalls(room);
+    this.fadeImage = plantRoomFade(this, {
+      mapW: ROOM_SIZE,
+      mapH: ROOM_SIZE,
+      tile: TILE,
+      wallKeyAt: (tx, ty) => wallTexture(tx, ty, this),
+    });
+    this.plantTorches(room);
+    this.spawnEntities(roomId);
+    if (snapPlayer) this.resetPlayer();
+    this.lockCamera();
+    this.physics.world.setBounds(0, 0, WORLD, WORLD);
+    this.dimLayer.setSize(WORLD, WORLD);
+    playRoomMusic(this, room.kind);
   }
 
   update(): void {
@@ -259,7 +300,28 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
         this.lastTx = tx;
         this.lastTy = ty;
         bus.emit('world:tile_entered', { tx, ty, facing });
+        this.tryPickup(tx, ty);
       }
+      this.tryPassage(tx, ty, facing);
+    }
+  }
+
+  private tryPassage(tx: number, ty: number, facing: Facing): void {
+    const dir = exitDirAt(tx, ty);
+    if (!dir || dir !== facing) return;
+    const room = world().dungeon.rooms[world().player.roomId];
+    const passage = room?.exits[dir];
+    if (!passage || passage.lock !== 'open') return;
+    bus.emit('world:enter_passage', { dir });
+  }
+
+  private tryPickup(tx: number, ty: number): void {
+    const state = world();
+    for (const entity of Object.values(state.entities)) {
+      if (entity.roomId !== state.player.roomId) continue;
+      if (!entity.tags.includes('pickup') || entity.state === 'open') continue;
+      if (entity.tx !== tx || entity.ty !== ty) continue;
+      gameStore.getState().dispatch({ type: 'OPEN_CONTAINER', entityId: entity.id }, 'keyboard');
     }
   }
 
@@ -292,32 +354,44 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.unsubStore?.();
     this.unsubHydrate?.();
     this.unsubDied?.();
+    this.unsubRoom?.();
     this.teardownCombat?.();
     this.teardownProximity?.();
     this.teardownFocus?.();
     this.teardownMarks?.();
     this.teardownSound?.();
-    this.unsubStore = null;
-    this.unsubHydrate = null;
-    this.unsubDied = null;
-    this.teardownCombat = null;
-    this.teardownProximity = null;
-    this.teardownFocus = null;
-    this.teardownMarks = null;
-    this.teardownSound = null;
+    this.teardownSlime?.();
+    this.teardownGhost?.();
+    this.teardownCrab?.();
     this.scale.off('resize', this.onResize, this);
     this.prev = null;
   }
 
   private onResize(gameSize: Phaser.Structs.Size): void {
     this.cameras.main.setSize(gameSize.width, gameSize.height);
+    this.lockCamera();
   }
 
-  spawnEntities(): void {
-    for (const child of [...this.entityLayer.list]) {
-      child.destroy();
-    }
+  private lockCamera(): void {
+    const zoom = roomZoom(this.scale.gameSize.width, this.scale.gameSize.height);
+    this.cameras.main.setZoom(zoom);
+    this.cameras.main.setBounds(0, 0, WORLD, WORLD);
+    this.cameras.main.stopFollow();
+    this.cameras.main.centerOn(WORLD / 2, WORLD / 2);
+  }
+
+  private clearDecor(): void {
+    for (const child of [...this.floorLayer.list]) child.destroy();
+    this.walls.clear(true, true);
+    for (const child of [...this.entityLayer.list]) child.destroy();
+    this.fadeImage?.destroy();
+    this.fadeImage = null;
+  }
+
+  spawnEntities(roomId: string): void {
     for (const entity of Object.values(world().entities)) {
+      if (entity.roomId !== roomId) continue;
+      if (entity.id === GHOST_ID) continue;
       const sprite = this.physics.add.sprite(
         entity.tx * TILE + 8,
         entity.ty * TILE + 8,
@@ -327,7 +401,16 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       const body = sprite.body as Phaser.Physics.Arcade.Body;
       body.setImmovable(true);
       body.allowGravity = false;
-      this.physics.add.collider(this.player, sprite);
+      insetBody(sprite, PLAYER_BODY);
+      if (entity.tags.includes('pickup')) {
+        body.checkCollision.none = true;
+      } else {
+        this.physics.add.collider(this.player, sprite);
+      }
+      if (entity.tags.includes('slime') || entity.tags.includes('crab')) {
+        this.physics.add.collider(sprite, this.walls);
+        body.setImmovable(false);
+      }
       this.entityLayer.add(sprite);
       applyEntityState(sprite, entity);
       attachProximityRings(this, { sprite, paneWorthy: entity.paneWorthy ?? false });
@@ -340,6 +423,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.prev = next;
     if (!prev) return;
     for (const [id, entity] of Object.entries(next.entities)) {
+      if (entity.roomId !== next.player.roomId) continue;
       if (prev.entities[id]?.state === entity.state) continue;
       const sprite = this.entityLayer.getByName(id) as Phaser.Physics.Arcade.Sprite | null;
       if (!sprite) continue;
@@ -374,27 +458,54 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   }
 
   private drawFloor(): void {
-    for (let ty = 0; ty < MAP_H; ty++) {
-      for (let tx = 0; tx < MAP_W; tx++) {
-        this.add.image(tx * TILE + 8, ty * TILE + 8, floorTexture(tx, ty, this));
+    for (let ty = 0; ty < ROOM_SIZE; ty++) {
+      for (let tx = 0; tx < ROOM_SIZE; tx++) {
+        const img = this.add.image(tx * TILE + 8, ty * TILE + 8, floorTexture(tx, ty, this));
+        this.floorLayer.add(img);
       }
     }
   }
 
-  private placeWall(tx: number, ty: number): void {
-    this.walls.create(tx * TILE + 8, ty * TILE + 8, wallTexture(tx, ty, this));
+  private buildWalls(room: Room): void {
+    const openings = new Set<string>();
+    for (const dir of ALL_FACINGS) {
+      if (room.exits[dir]) {
+        const e = EXIT_TILE[dir];
+        openings.add(`${e.tx},${e.ty}`);
+      }
+    }
+    for (let tx = 0; tx < ROOM_SIZE; tx++) {
+      this.placeWallUnlessOpen(tx, 0, openings);
+      this.placeWallUnlessOpen(tx, ROOM_SIZE - 1, openings);
+    }
+    for (let ty = 1; ty < ROOM_SIZE - 1; ty++) {
+      this.placeWallUnlessOpen(0, ty, openings);
+      this.placeWallUnlessOpen(ROOM_SIZE - 1, ty, openings);
+    }
   }
 
-  private plantTorches(): void {
+  private placeWallUnlessOpen(tx: number, ty: number, openings: Set<string>): void {
+    if (openings.has(`${tx},${ty}`)) return;
+    const wall = this.walls.create(tx * TILE + 8, ty * TILE + 8, wallTexture(tx, ty, this)) as Phaser.Physics.Arcade.Sprite;
+    insetBody(wall, WALL_BODY);
+  }
+
+  private plantTorches(room: Room): void {
     if (!this.textures.exists('tex-torch')) return;
-    const xs = [3, 8, 12, 18, 24];
-    for (const tx of xs) {
+    if (room.kind === 'master') return;
+    const spots = [
+      [2, 1],
+      [9, 1],
+    ] as const;
+    for (const [tx, ty] of spots) {
       const x = tx * TILE + 8;
-      const y = 8;
+      const y = ty * TILE + 8;
       const torch = this.add.image(x, y, 'tex-torch').setDepth(6);
+      this.floorLayer.add(torch);
       const glow = this.textures.exists('tex-glow')
-        ? this.add.image(x, TILE + 4, 'tex-glow').setDepth(5).setAlpha(0.4)
+        ? this.add.image(x, y + TILE, 'tex-glow').setDepth(5).setAlpha(0.4)
         : null;
+      if (glow) this.floorLayer.add(glow);
       this.tweens.add({
         targets: glow ? [torch, glow] : torch,
         alpha: { from: 0.55, to: 1 },
