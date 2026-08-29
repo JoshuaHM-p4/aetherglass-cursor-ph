@@ -18,7 +18,10 @@ import {
   buildSystemPrompt, pickModel, type OracleProvider,
 } from '../../../lib/oracle/prompt';
 import { createTurnSim, parseOracleRequest } from '../../../lib/oracle/turn';
-import { pruneIncompleteToolParts } from '../../../lib/oracle/messages';
+import {
+  prepareOracleMessages,
+  stripOpenAiItemIdsFromModelMessages,
+} from '../../../lib/oracle/messages';
 import { buildTools } from '../../../lib/oracle/tools';
 
 export const maxDuration = 30;
@@ -63,21 +66,22 @@ export async function POST(req: Request) {
       const modelId = pickModel(kind, turn.packet, provider);
 
       const glance = kind === 'look' || kind === 'prefetch';
+      const prepared = prepareOracleMessages(messages as UIMessage[]);
       let converted;
       try {
-        converted = await convertToModelMessages(
-          pruneIncompleteToolParts(messages as UIMessage[]),
-          { ignoreIncompleteToolCalls: true },
-        );
+        converted = await convertToModelMessages(prepared, {
+          ignoreIncompleteToolCalls: true,
+        });
       } catch {
         converted = await convertToModelMessages(
-          pruneIncompleteToolParts(messages as UIMessage[]).map((message) => ({
+          prepared.map((message) => ({
             ...message,
             parts: message.parts.filter((part) => part.type === 'text' || part.type === 'step-start'),
           })),
           { ignoreIncompleteToolCalls: true },
         );
       }
+      converted = stripOpenAiItemIdsFromModelMessages(converted);
       const result = streamText({
         model: provider === 'anthropic' ? anthropic(modelId) : openai(modelId),
         system,
@@ -100,7 +104,7 @@ export async function POST(req: Request) {
         stopWhen: stepCountIs(glance ? 2 : 4),
         ...(provider === 'anthropic'
           ? { providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } } }
-          : {}),
+          : { providerOptions: { openai: { store: false } } }),
       });
 
       writer.merge(result.toUIMessageStream());
