@@ -110,47 +110,47 @@ export default function Hud(): JSX.Element {
 
   return (
     <>
-      <div className="pointer-events-auto absolute top-4 left-4 z-10" data-hud>
+      <div className="pointer-events-auto absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 flex-col items-start gap-1.5" data-hud>
         <Hearts />
-      </div>
-      <div className="pointer-events-auto absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-end gap-2" data-hud>
-        <Hotbar
-          active={slot}
-          onSelect={(i) => {
-            if (heldIndex !== null) stashInSlot(i);
-            else pickSlot(i);
-          }}
-          onClear={(i) => {
-            readGame().dispatch(
-              { type: 'SET_HOTBAR', slot: i as 0 | 1 | 2, itemId: null },
-              'keyboard',
-            );
-          }}
-        />
-        <button
-          type="button"
-          title="bag (tab)"
-          onClick={(event) => {
-            toggleBag(!bagOpen);
-            event.currentTarget.blur();
-          }}
-          className={`flex h-12 w-12 flex-col items-center justify-center border ${
-            bagOpen
-              ? 'border-amber-400/80 bg-black/55 shadow-[0_0_10px_rgba(201,168,106,0.35)]'
-              : 'border-white/15 bg-black/40 hover:border-amber-200/50'
-          }`}
-        >
-          <img
-            src="/assets/items/bag.png"
-            alt=""
-            width={28}
-            height={28}
-            draggable={false}
-            className="pointer-events-none select-none"
-            style={{ imageRendering: 'pixelated' }}
+        <div className="flex items-end gap-2">
+          <Hotbar
+            active={slot}
+            onSelect={(i) => {
+              if (heldIndex !== null) stashInSlot(i);
+              else pickSlot(i);
+            }}
+            onClear={(i) => {
+              readGame().dispatch(
+                { type: 'SET_HOTBAR', slot: i as 0 | 1 | 2, itemId: null },
+                'keyboard',
+              );
+            }}
           />
-          <span className="mt-0.5 font-pixel text-[7px] tracking-widest text-white/40">TAB</span>
-        </button>
+          <button
+            type="button"
+            title="bag (tab)"
+            onClick={(event) => {
+              toggleBag(!bagOpen);
+              event.currentTarget.blur();
+            }}
+            className={`flex h-12 w-12 flex-col items-center justify-center border ${
+              bagOpen
+                ? 'border-amber-400/80 bg-black/55 shadow-[0_0_10px_rgba(201,168,106,0.35)]'
+                : 'border-white/15 bg-black/40 hover:border-amber-200/50'
+            }`}
+          >
+            <img
+              src="/assets/items/bag.png"
+              alt=""
+              width={28}
+              height={28}
+              draggable={false}
+              className="pointer-events-none select-none"
+              style={{ imageRendering: 'pixelated' }}
+            />
+            <span className="mt-0.5 font-pixel text-[7px] tracking-widest text-white/40">TAB</span>
+          </button>
+        </div>
       </div>
       {bagOpen && (
         <div

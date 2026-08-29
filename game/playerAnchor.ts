@@ -38,7 +38,7 @@ export function paneBoxBesidePlayer(
   return { left, top };
 }
 
-/** World pixel -> overlay-local CSS pixel, accounting for FIT letterboxing and camera zoom. */
+/** World pixel -> overlay-local CSS pixel, accounting for canvas box and camera zoom. */
 export function worldToOverlay(
   worldX: number,
   worldY: number,

@@ -19,6 +19,14 @@ import { getHotbarSlot, isWorldInputBlocked } from '../inputCapture';
 import { swingHitbox } from './hitbox';
 import { hurtShakeOffset } from './hurtFx';
 import { playSfx } from './sound';
+import {
+  slashAlpha,
+  slashPlace,
+  swingAngle,
+  swingLunge,
+  swingProgress,
+  swordHand,
+} from './swingFx';
 
 export { swingHitbox } from './hitbox';
 
@@ -60,7 +68,12 @@ type CombatScene = Phaser.Scene & {
 /** Shared with Overworld's store sync, so a hit flash cannot outlive a death. */
 export const DEAD_TINT = 0x555555;
 
-function equippedWeapon(): { itemId: string | null; damage: number; reach: number } {
+function equippedWeapon(): {
+  itemId: string | null;
+  damage: number;
+  reach: number;
+  blade: boolean;
+} {
   const { player } = world();
   const itemId = player.hotbar[getHotbarSlot()];
   const item = itemId ? player.bag.find((i) => i.id === itemId) : undefined;
@@ -68,6 +81,7 @@ function equippedWeapon(): { itemId: string | null; damage: number; reach: numbe
     itemId,
     damage: item?.stats?.damage ?? 1,
     reach: item?.stats?.reach ?? 1,
+    blade: item?.kind === 'weapon' || Boolean(item?.tags.includes('sharp')),
   };
 }
 
@@ -84,6 +98,66 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
   let shakeX = 0;
   let shakeY = 0;
   let flashTimer: Phaser.Time.TimerEvent | null = null;
+  let swingAt = 0;
+  let swingFacing: Facing = 'down';
+  let showBlade = false;
+  let lungeX = 0;
+  let lungeY = 0;
+
+  const blade = scene.textures.exists('tex-sword')
+    ? scene.add.image(0, 0, 'tex-sword').setVisible(false).setOrigin(0.5, 0.88).setDepth(12)
+    : null;
+  const slash = scene.textures.exists('tex-slash-0')
+    ? scene.add.sprite(0, 0, 'tex-slash-0').setVisible(false).setDepth(13)
+    : null;
+
+  const hideSwing = (): void => {
+    swingAt = 0;
+    showBlade = false;
+    blade?.setVisible(false);
+    slash?.setVisible(false).anims.stop();
+  };
+
+  const clearLunge = (): void => {
+    if (!lungeX && !lungeY) return;
+    s.player.x -= lungeX;
+    s.player.y -= lungeY;
+    lungeX = 0;
+    lungeY = 0;
+  };
+
+  const poseSwing = (): void => {
+    if (swingAt === 0) return;
+    const t = swingProgress(scene.time.now - swingAt);
+    const hand = swordHand(swingFacing);
+    const place = slashPlace(swingFacing);
+    if (blade && showBlade) {
+      blade
+        .setPosition(s.player.x + hand.x, s.player.y + hand.y)
+        .setAngle(swingAngle(swingFacing, t))
+        .setDepth(swingFacing === 'up' ? 9 : 12)
+        .setVisible(true);
+    }
+    if (slash) {
+      slash
+        .setPosition(s.player.x + place.x, s.player.y + place.y)
+        .setAngle(place.angle)
+        .setAlpha(slashAlpha(t))
+        .setVisible(true);
+    }
+  };
+
+  const burstSpark = (x: number, y: number): void => {
+    if (!scene.textures.exists('tex-spark')) return;
+    const spark = scene.add.image(x, y, 'tex-spark').setDepth(14);
+    scene.tweens.add({
+      targets: spark,
+      alpha: 0,
+      scale: 1.6,
+      duration: 140,
+      onComplete: () => spark.destroy(),
+    });
+  };
 
   const clearShake = (): void => {
     if (!shakeX && !shakeY) return;
@@ -123,7 +197,14 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     cooldownUntil = now + COMBAT.cooldownMs;
     playSfx('swing');
     const facing = s.facing;
-    const { itemId, reach } = equippedWeapon();
+    const { itemId, reach, blade: armed } = equippedWeapon();
+    swingAt = now;
+    swingFacing = facing;
+    showBlade = armed;
+    if (slash) {
+      slash.setVisible(true).setAlpha(1);
+      if (scene.anims.exists('slash-arc')) slash.play('slash-arc', true);
+    }
     const tileX = Math.floor(s.player.x / TILE);
     const tileY = Math.floor(s.player.y / TILE);
     const box = swingHitbox(tileX, tileY, facing, reach);
@@ -147,6 +228,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
 
   const onPreUpdate = () => {
     clearShake();
+    clearLunge();
   };
 
   const onUpdate = () => {
@@ -176,15 +258,28 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
 
   const onPostUpdate = () => {
     const now = scene.time.now;
-    if (hurtAt === 0 || now >= hurtAt + COMBAT.iFramesMs) return;
-    const shake = hurtShakeOffset(now - hurtAt, COMBAT.hurtShakeMs, COMBAT.hurtShakePx);
-    shakeX = shake.x;
-    shakeY = shake.y;
-    s.player.x += shakeX;
-    s.player.y += shakeY;
-    if (now >= hurtAt + COMBAT.hurtFlashMs) {
-      s.player.setAlpha(Math.floor(now / 60) % 2 === 0 ? 1 : 0.35);
+    if (swingAt !== 0) {
+      const t = swingProgress(now - swingAt);
+      if (t >= 1) hideSwing();
+      else {
+        const lunge = swingLunge(swingFacing, t);
+        lungeX = lunge.x;
+        lungeY = lunge.y;
+        s.player.x += lungeX;
+        s.player.y += lungeY;
+      }
     }
+    if (hurtAt !== 0 && now < hurtAt + COMBAT.iFramesMs) {
+      const shake = hurtShakeOffset(now - hurtAt, COMBAT.hurtShakeMs, COMBAT.hurtShakePx);
+      shakeX = shake.x;
+      shakeY = shake.y;
+      s.player.x += shakeX;
+      s.player.y += shakeY;
+      if (now >= hurtAt + COMBAT.hurtFlashMs) {
+        s.player.setAlpha(Math.floor(now / 60) % 2 === 0 ? 1 : 0.35);
+      }
+    }
+    if (swingAt !== 0) poseSwing();
   };
 
   scene.events.on('preupdate', onPreUpdate);
@@ -196,6 +291,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
       const sprite = s.entityLayer.getByName(event.entityId) as Phaser.GameObjects.Sprite | null;
       if (!sprite) return;
       sprite.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+      burstSpark(sprite.x, sprite.y);
       scene.time.delayedCall(COMBAT.swingMs, () => {
         sprite.setTintMode(Phaser.TintModes.MULTIPLY);
         if (world().entities[event.entityId]?.state === 'dead') sprite.setTint(DEAD_TINT);
@@ -211,6 +307,8 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     if (event.type === 'player_died') {
       hurtAt = 0;
       endHurtVisual();
+      hideSwing();
+      clearLunge();
     }
   });
 
@@ -218,6 +316,8 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     iframeUntil = 0;
     hurtAt = 0;
     endHurtVisual();
+    hideSwing();
+    clearLunge();
   });
 
   return () => {
@@ -227,6 +327,10 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     scene.events.off('postupdate', onPostUpdate);
     flashTimer?.remove(false);
     endHurtVisual();
+    hideSwing();
+    clearLunge();
+    blade?.destroy();
+    slash?.destroy();
     offEvent();
     offHydrate();
   };

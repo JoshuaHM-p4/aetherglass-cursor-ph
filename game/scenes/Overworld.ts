@@ -163,7 +163,9 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.physics.world.setBounds(0, 0, worldW, worldH);
     this.cameras.main.setZoom(CAMERA_ZOOM);
     this.cameras.main.setRoundPixels(true);
+    this.cameras.main.setSize(this.scale.gameSize.width, this.scale.gameSize.height);
     this.cameras.main.startFollow(this.player, true, 1, 1);
+    this.scale.on('resize', this.onResize, this);
 
     this.entityLayer = this.add.container(0, 0);
     this.dimLayer = this.add
@@ -303,7 +305,12 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownFocus = null;
     this.teardownMarks = null;
     this.teardownSound = null;
+    this.scale.off('resize', this.onResize, this);
     this.prev = null;
+  }
+
+  private onResize(gameSize: Phaser.Structs.Size): void {
+    this.cameras.main.setSize(gameSize.width, gameSize.height);
   }
 
   spawnEntities(): void {

@@ -231,8 +231,8 @@ export function initialState(): GameState {
   const sword: Item = instantiate('sword_short');
   return {
     player: {
-      hp: 12,
-      hpMax: 12,
+      hp: 6,
+      hpMax: 6,
       paneIntegrity: 100,
       tx: 5,
       ty: 5,
