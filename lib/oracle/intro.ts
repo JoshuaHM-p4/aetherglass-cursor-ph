@@ -6,14 +6,14 @@ export const INTRO_BEATS = [
   {
     id: 'story',
     text:
-      "You're awake. I'm the shard at your shoulder — what's left of the old pane. " +
-      'I remember a keep that stood, and a surface that forgot. Below us the caves hoard ' +
-      'what daylight abandoned. A locked heart waits deeper still, and it will not open for a common key.',
+      "Hey. I'm the Aetherglass — the cracked shard on your shoulder. I talk, I judge, and I used to be a whole window. " +
+      "The fountain is the safe room. North is a hole: caves, locked doors, and a heart at the bottom that brass keys bounce off. " +
+      "I'll tell you when a plan is stupid.",
   },
   {
     id: 'controls',
     text:
-      'Arrows or WASD, you walk. Space, you swing. Enter, you speak to whatever you are standing beside. ' +
-      'Tab is the bag. 1, 2, and 3 are the hotbar. When you are ready, the north opening is the only way down.',
+      "Arrows or WASD to walk. Space to swing. Enter to talk to whatever you're standing next to. " +
+      "Tab is the bag. 1, 2, and 3 are the hotbar. Go north when you're done staring. I'm not drawing a map.",
   },
 ] as const;

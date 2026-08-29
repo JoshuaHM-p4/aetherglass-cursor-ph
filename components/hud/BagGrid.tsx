@@ -6,10 +6,14 @@ import { useGame } from '../useGame';
 import ItemIcon from './ItemIcon';
 
 export default function BagGrid({
+  cursor,
   heldIndex,
+  onCursor,
   onSlot,
 }: {
+  cursor: number;
   heldIndex: number | null;
+  onCursor: (index: number) => void;
   onSlot: (index: number) => void;
 }) {
   const bag = useGame((s) => s.state.player.bag);
@@ -24,18 +28,20 @@ export default function BagGrid({
     >
       <p className="mb-2 font-pixel text-[10px] tracking-[0.2em] text-amber-200/80">BAG</p>
       <p className="mb-2 font-pixel text-[8px] leading-snug text-white/45">
-        click an item, then 1–3 or a hotbar slot
+        arrows / wasd move · space select · 1–3 hotbar
       </p>
       <ol className="grid grid-cols-4 gap-1.5">
         {slots.map((item, i) => {
           const equipped = item ? hotbar.includes(item.id) : false;
           const held = heldIndex === i;
+          const focused = cursor === i;
           return (
             <li key={i}>
               <button
                 type="button"
                 disabled={!item && heldIndex === null}
                 onMouseEnter={() => {
+                  onCursor(i);
                   if (item) playFileSfx('cursor');
                 }}
                 onClick={(event) => {
@@ -47,9 +53,11 @@ export default function BagGrid({
                 className={`relative flex h-16 w-full flex-col items-center justify-center border px-1 ${
                   held
                     ? 'border-amber-300 bg-amber-400/20'
-                    : equipped
-                      ? 'border-amber-400/50 bg-black/45'
-                      : 'border-white/12 bg-black/35'
+                    : focused
+                      ? 'border-amber-200 bg-black/50 shadow-[0_0_8px_rgba(201,168,106,0.4)]'
+                      : equipped
+                        ? 'border-amber-400/50 bg-black/45'
+                        : 'border-white/12 bg-black/35'
                 } ${item ? 'cursor-pointer hover:border-amber-200/70' : 'cursor-default'}`}
               >
                 {item ? (
@@ -72,7 +80,7 @@ export default function BagGrid({
           );
         })}
       </ol>
-      <p className="mt-2 font-pixel text-[8px] text-white/35">tab to close</p>
+      <p className="mt-2 font-pixel text-[8px] text-white/35">space pick · tab close</p>
     </div>
   );
 }

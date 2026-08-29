@@ -5,14 +5,34 @@ import { bus } from '../../game/EventBus';
 import { setPlaying } from '../../lib/client/play';
 import { cycleHotbar, getHotbarSlot, isIntroLocked, setBagOpen, setHotbarSlot, setSettingsOpen } from '../../game/inputCapture';
 import { playFileSfx, preloadFileSfx } from '../../game/systems/fileSfx';
+import { BAG_SLOTS } from '../../lib/sim/select';
 import { readGame, useGame } from '../useGame';
 import BagGrid from './BagGrid';
 import Hearts from './Hearts';
 import Hotbar from './Hotbar';
 import InteractHint from './InteractHint';
 import Minimap from './Minimap';
+import PickupFloat from './PickupFloat';
 import SettingsModal, { SettingsButton } from './SettingsModal';
 import { toggleHitboxDebug } from '../../game/hitboxDebug';
+
+const BAG_COLS = 4;
+
+function bagStep(from: number, dx: number, dy: number): number {
+  const rows = Math.ceil(BAG_SLOTS / BAG_COLS);
+  const x = (((from % BAG_COLS) + dx) % BAG_COLS + BAG_COLS) % BAG_COLS;
+  const y = (((Math.floor(from / BAG_COLS) + dy) % rows) + rows) % rows;
+  return y * BAG_COLS + x;
+}
+
+function bagMove(event: KeyboardEvent): { dx: number; dy: number } | null {
+  const k = event.key;
+  if (k === 'ArrowLeft' || k === 'a' || k === 'A') return { dx: -1, dy: 0 };
+  if (k === 'ArrowRight' || k === 'd' || k === 'D') return { dx: 1, dy: 0 };
+  if (k === 'ArrowUp' || k === 'w' || k === 'W') return { dx: 0, dy: -1 };
+  if (k === 'ArrowDown' || k === 's' || k === 'S') return { dx: 0, dy: 1 };
+  return null;
+}
 
 export default function Hud(): JSX.Element {
   const hp = useGame((s) => s.state.player.hp);
@@ -20,6 +40,7 @@ export default function Hud(): JSX.Element {
   const [settingsOpen, setSettings] = useState(false);
   const [slot, setSlot] = useState(getHotbarSlot);
   const [heldIndex, setHeld] = useState<number | null>(null);
+  const [bagCursor, setBagCursor] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
 
   const toggleBag = useCallback((open: boolean) => {
@@ -30,6 +51,7 @@ export default function Hud(): JSX.Element {
     setOpen(open);
     setBagOpen(open);
     if (!open) setHeld(null);
+    else setBagCursor(0);
     bus.emit('hud:bag_toggled', { open });
     playFileSfx(open ? 'open' : 'close');
   }, []);
@@ -72,6 +94,7 @@ export default function Hud(): JSX.Element {
 
   const onBagSlot = useCallback(
     (index: number) => {
+      setBagCursor(index);
       const bag = readGame().state.player.bag;
       const item = bag[index];
       if (heldIndex === null) {
@@ -94,18 +117,19 @@ export default function Hud(): JSX.Element {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.repeat) return;
       if (isIntroLocked()) return;
+      if (event.repeat && !bagOpen) return;
       const typing =
         event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
       if (event.key === 'F3') {
         event.preventDefault();
-        if (typing) return;
+        if (event.repeat || typing) return;
         toggleHitboxes();
         return;
       }
       if (readGame().state.player.hp <= 0) return;
       if (event.key === 'Escape') {
+        if (event.repeat) return;
         if (settingsOpen) {
           event.preventDefault();
           event.stopImmediatePropagation();
@@ -118,13 +142,34 @@ export default function Hud(): JSX.Element {
         return;
       }
       if (event.key === 'Tab') {
-        if (settingsOpen) return;
+        if (event.repeat || settingsOpen) return;
         event.preventDefault();
         if (typing) return;
         toggleBag(!bagOpen);
         return;
       }
       if (typing || settingsOpen) return;
+      if (bagOpen) {
+        const step = bagMove(event);
+        if (step) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          setBagCursor((from) => bagStep(from, step.dx, step.dy));
+          playFileSfx('cursor');
+          return;
+        }
+        if (event.key === ' ' || event.code === 'Space') {
+          if (event.repeat) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          const item = readGame().state.player.bag[bagCursor];
+          if (heldIndex === null && !item) return;
+          playFileSfx('select');
+          onBagSlot(bagCursor);
+          return;
+        }
+      }
+      if (event.repeat) return;
       const fromDigit =
         event.code === 'Digit1' || event.code === 'Numpad1'
           ? 0
@@ -158,7 +203,7 @@ export default function Hud(): JSX.Element {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [bagOpen, settingsOpen, heldIndex, toggleBag, toggleSettings, toggleHitboxes, stashInSlot, pickSlot]);
+  }, [bagOpen, bagCursor, settingsOpen, heldIndex, toggleBag, toggleSettings, toggleHitboxes, stashInSlot, pickSlot, onBagSlot]);
 
   useEffect(() => {
     if (hp <= 0 && bagOpen) toggleBag(false);
@@ -189,6 +234,7 @@ export default function Hud(): JSX.Element {
   return (
     <>
       <InteractHint />
+      <PickupFloat />
       <Minimap />
       <div className="pointer-events-auto absolute top-5 right-5 z-30 flex flex-col gap-1.5" data-hud>
         <SettingsButton
@@ -218,6 +264,7 @@ export default function Hud(): JSX.Element {
           />
           <button
             type="button"
+            data-bag-button
             title="bag (tab)"
             onClick={(event) => {
               if (isIntroLocked()) return;
@@ -257,7 +304,7 @@ export default function Hud(): JSX.Element {
           className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-black/35"
           onClick={() => toggleBag(false)}
         >
-          <BagGrid heldIndex={heldIndex} onSlot={onBagSlot} />
+          <BagGrid cursor={bagCursor} heldIndex={heldIndex} onCursor={setBagCursor} onSlot={onBagSlot} />
         </div>
       )}
       {toast && (

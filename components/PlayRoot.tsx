@@ -19,7 +19,7 @@ export default function PlayRoot() {
         <GameCanvas />
       </div>
       {playing && (
-        <div className="pointer-events-none absolute inset-0 z-10">
+        <div className="pointer-events-none absolute inset-0 z-10" data-play-overlay>
           <Hud />
           <Pane />
           <DeathScreen />

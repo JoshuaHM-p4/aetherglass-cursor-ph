@@ -30,7 +30,7 @@ const VOL: Record<Cue, number> = {
   chest: 0.32,
   glass: 0.28,
   glass_close: 0.18,
-  pickup: 0.24,
+  pickup: 0.34,
   death: 0.42,
 };
 
@@ -41,6 +41,21 @@ let bank: Bank | null = null;
 let glassOpen = false;
 let stepFlip = false;
 let lastHp = Infinity;
+/** Item ids already seen this run. Seeded from the bag so the starting sword is not a discovery. */
+const found = new Set<string>();
+
+function rememberHeld(): void {
+  found.clear();
+  const player = gameStore.getState().state.player;
+  for (const item of player.bag) found.add(item.id);
+  for (const id of player.hotbar) if (id) found.add(id);
+}
+
+function markDiscovery(itemId: string): boolean {
+  const fresh = !found.has(itemId);
+  found.add(itemId);
+  return fresh;
+}
 
 function audio(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -117,10 +132,13 @@ function buildBank(a: AudioContext): Bank {
       const e = Math.exp(-t * 8) * env(t, 0.004, 0.2, dur);
       return Math.sin(2 * Math.PI * 523 * t) * e * 0.45;
     }),
-    pickup: bake(a, 0.2, (t, dur) => {
-      const e = env(t, 0.004, 0.14, dur);
-      const f = 660 + t * 400;
-      return Math.sin(2 * Math.PI * f * t) * e * 0.5;
+    pickup: bake(a, 0.28, (t, dur) => {
+      const e = env(t, 0.004, 0.16, dur);
+      const f = 720 + t * 520;
+      return (
+        Math.sin(2 * Math.PI * f * t) * 0.55 +
+        Math.sin(2 * Math.PI * (f * 1.5) * t) * 0.18
+      ) * e;
     }),
     death: bake(a, 1.4, (t, dur) => {
       const e = env(t, 0.02, 0.7, dur);
@@ -156,6 +174,7 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
   const a = audio();
   if (a) bank = buildBank(a);
   lastHp = gameStore.getState().state.player.hp;
+  rememberHeld();
   preloadFileSfx();
 
   const unlock = () => {
@@ -174,12 +193,19 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
   const offEvent = bus.on('sim:event', (event) => {
     if (event.type === 'container_opened') play('chest');
     if (event.type === 'item_gained') {
+      const fresh = markDiscovery(event.itemId);
       if (event.itemId === 'key') playFileSfx('key');
       else if (event.itemId === 'heart_container') {
         playFileSfx('heart');
         playFileSfx('fanfare');
       } else if (event.itemId === 'master_key') playFileSfx('secret');
-      else playFileSfx('fanfare', 0.7);
+      else play('pickup', 0.94 + Math.random() * 0.14);
+      if (fresh && event.itemId !== 'heart_container') playFileSfx('fanfare');
+    }
+    if (event.type === 'crafted') {
+      const fresh = markDiscovery(event.itemId);
+      play('pickup', 0.94 + Math.random() * 0.14);
+      if (fresh) playFileSfx('fanfare');
     }
     if (event.type === 'pane_cracked') play('glass_close', 1.3);
     if (event.type === 'player_died') play('death');
@@ -205,6 +231,9 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
   const offIntro = bus.on('pane:intro', ({ cue }) => {
     if (cue === 'hey') playFileSfx('hey');
   });
+  const offHydrate = bus.on('sim:hydrated', () => {
+    rememberHeld();
+  });
 
   return () => {
     offTile();
@@ -213,6 +242,7 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
     offEvent();
     offAwake();
     offIntro();
+    offHydrate();
     scene.input.off('pointerdown', unlock);
     window.removeEventListener('keydown', onKey);
   };
