@@ -79,5 +79,51 @@ export function isWorldInputBlocked(): boolean {
   const el = document.activeElement;
   if (!(el instanceof HTMLElement)) return false;
   if (el === document.body || el.tagName === 'CANVAS') return false;
+  if (el.closest('[data-touch-pad]')) return false;
   return Boolean(el.closest('[data-pane], [data-hud]'));
+}
+
+export type PadDir = 'left' | 'right' | 'up' | 'down';
+export type PadAction = 'enter' | 'space' | 'tab' | 'escape';
+export type PadTap = PadDir | PadAction;
+
+const padDir = { left: false, right: false, up: false, down: false };
+const padQueued = { enter: false, space: false };
+const padTaps = new Set<(tap: PadTap) => void>();
+
+export function setPadDir(dir: PadDir, down: boolean): void {
+  padDir[dir] = down;
+}
+
+export function isPadDirDown(dir: PadDir): boolean {
+  return padDir[dir];
+}
+
+export function clearPadDirs(): void {
+  padDir.left = false;
+  padDir.right = false;
+  padDir.up = false;
+  padDir.down = false;
+}
+
+export function pressPadAction(action: PadAction): void {
+  if (action === 'enter' || action === 'space') padQueued[action] = true;
+  for (const fn of padTaps) fn(action);
+}
+
+export function consumePadAction(action: 'enter' | 'space'): boolean {
+  if (!padQueued[action]) return false;
+  padQueued[action] = false;
+  return true;
+}
+
+export function emitPadDir(dir: PadDir): void {
+  for (const fn of padTaps) fn(dir);
+}
+
+export function subscribePadTap(fn: (tap: PadTap) => void): () => void {
+  padTaps.add(fn);
+  return () => {
+    padTaps.delete(fn);
+  };
 }

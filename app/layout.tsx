@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Crimson_Pro, Silkscreen } from 'next/font/google';
 import './globals.css';
 
@@ -14,6 +14,12 @@ const silkscreen = Silkscreen({
   variable: '--font-silkscreen',
   display: 'swap',
 });
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
 
 export const metadata: Metadata = {
   title: 'Aetherglass',

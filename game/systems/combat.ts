@@ -16,7 +16,7 @@ import Phaser from 'phaser';
 import type { Facing, Item } from '../../lib/sim/types';
 import { gameStore, world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
-import { getHotbarSlot, isWorldInputBlocked } from '../inputCapture';
+import { consumePadAction, getHotbarSlot, isWorldInputBlocked } from '../inputCapture';
 import { ROOM_SIZE } from '../../lib/dungeon/const';
 import { TILE } from '../const';
 import { BOLT, boltHits, boltRangePx, foeContactReach, foeRadiusPx, inEnemyContact, inSwingCone, SWING_CONE } from './hitbox';
@@ -477,6 +477,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
   };
 
   const onUpdate = () => {
+    if (consumePadAction('space')) onSpace();
     const now = scene.time.now;
     tickBolts();
     const hurting = hurtAt !== 0 && now < hurtAt + COMBAT.iFramesMs;

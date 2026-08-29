@@ -19,7 +19,7 @@ import type { Entity, Facing, GameState, Room } from '../../lib/sim/types';
 import { gameStore, world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
 import { ACTOR_BODY, PROP_BODY, TILE, WALL_BODY } from '../const';
-import { isWorldInputBlocked, setRoomWiping } from '../inputCapture';
+import { isPadDirDown, isWorldInputBlocked, setRoomWiping } from '../inputCapture';
 import { CRAB_BODY, CRAB_SCALE } from '../systems/hitbox';
 import { isPlaying } from '../../lib/client/play';
 import { requestSessionDismiss } from '../../lib/client/paneSessions';
@@ -323,10 +323,10 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     const knocked = tickKnockback(this.player, this.time.now);
     let away: Facing | null = null;
     if (!knocked) {
-      const left = this.cursors.left.isDown || this.wasd.A.isDown;
-      const right = this.cursors.right.isDown || this.wasd.D.isDown;
-      const up = this.cursors.up.isDown || this.wasd.W.isDown;
-      const down = this.cursors.down.isDown || this.wasd.S.isDown;
+      const left = this.cursors.left.isDown || this.wasd.A.isDown || isPadDirDown('left');
+      const right = this.cursors.right.isDown || this.wasd.D.isDown || isPadDirDown('right');
+      const up = this.cursors.up.isDown || this.wasd.W.isDown || isPadDirDown('up');
+      const down = this.cursors.down.isDown || this.wasd.S.isDown || isPadDirDown('down');
       let vx = 0;
       let vy = 0;
       if (left) {

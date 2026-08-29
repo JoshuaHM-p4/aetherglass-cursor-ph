@@ -8,7 +8,7 @@ import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { bus } from '../../game/EventBus';
-import { setIntroLocked, setPaneTyping } from '../../game/inputCapture';
+import { setIntroLocked, setPaneTyping, subscribePadTap } from '../../game/inputCapture';
 import { emptyJournal, isTurnCommitted, record, type PaneJournal } from '../oracle/journal';
 import type { ChoicesData, FocusData, OfferedChoice, TurnId, Verdict } from '../oracle/protocol';
 import { verdictKey } from '../oracle/protocol';
@@ -407,7 +407,14 @@ export function useOracleTurn(): OracleTurnApi {
       setIntroBeat(introBeat + 1);
     };
     window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
+    const offPad = subscribePadTap((tap) => {
+      if (tap !== 'enter') return;
+      onKey(new KeyboardEvent('keydown', { key: 'Enter' }));
+    });
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      offPad();
+    };
   }, [introBeat]);
 
   useEffect(() => {

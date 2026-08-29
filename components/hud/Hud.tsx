@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { bus } from '../../game/EventBus';
 import { setPlaying } from '../../lib/client/play';
-import { cycleHotbar, getHotbarSlot, isIntroLocked, setBagOpen, setHotbarSlot, setSettingsOpen } from '../../game/inputCapture';
+import { cycleHotbar, getHotbarSlot, isIntroLocked, setBagOpen, setHotbarSlot, setSettingsOpen, subscribePadTap } from '../../game/inputCapture';
 import { playFileSfx, preloadFileSfx } from '../../game/systems/fileSfx';
 import { BAG_SLOTS } from '../../lib/sim/select';
 import { readGame, useGame } from '../useGame';
@@ -15,6 +15,7 @@ import InteractHint from './InteractHint';
 import Minimap from './Minimap';
 import PickupFloat from './PickupFloat';
 import SettingsModal, { SettingsButton } from './SettingsModal';
+import TouchPad from './TouchPad';
 import { toggleHitboxDebug } from '../../game/hitboxDebug';
 
 const BAG_COLS = 4;
@@ -207,6 +208,45 @@ export default function Hud(): JSX.Element {
   }, [bagOpen, bagCursor, settingsOpen, heldIndex, toggleBag, toggleSettings, toggleHitboxes, stashInSlot, pickSlot, onBagSlot]);
 
   useEffect(() => {
+    return subscribePadTap((tap) => {
+      if (isIntroLocked()) return;
+      if (readGame().state.player.hp <= 0) return;
+      if (tap === 'tab') {
+        if (settingsOpen) return;
+        toggleBag(!bagOpen);
+        return;
+      }
+      if (tap === 'escape') {
+        if (settingsOpen) toggleSettings(false);
+        else toggleSettings(true);
+        return;
+      }
+      if (settingsOpen) return;
+      if (tap === 'space' && bagOpen) {
+        const item = readGame().state.player.bag[bagCursor];
+        if (heldIndex === null && !item) return;
+        playFileSfx('select');
+        onBagSlot(bagCursor);
+        return;
+      }
+      if (!bagOpen) return;
+      const step =
+        tap === 'left'
+          ? { dx: -1, dy: 0 }
+          : tap === 'right'
+            ? { dx: 1, dy: 0 }
+            : tap === 'up'
+              ? { dx: 0, dy: -1 }
+              : tap === 'down'
+                ? { dx: 0, dy: 1 }
+                : null;
+      if (!step) return;
+      setBagCursor((from) => bagStep(from, step.dx, step.dy));
+      playFileSfx('cursor');
+    });
+  }, [bagOpen, bagCursor, settingsOpen, heldIndex, toggleBag, toggleSettings, onBagSlot]);
+
+  useEffect(() => {
     if (hp <= 0 && bagOpen) toggleBag(false);
     if (hp <= 0 && settingsOpen) toggleSettings(false);
   }, [hp, bagOpen, settingsOpen, toggleBag, toggleSettings]);
@@ -234,6 +274,7 @@ export default function Hud(): JSX.Element {
 
   return (
     <>
+      {hp > 0 && <TouchPad bagOpen={bagOpen} />}
       <InteractHint />
       <PickupFloat />
       <Minimap />

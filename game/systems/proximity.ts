@@ -19,7 +19,7 @@ import Phaser from 'phaser';
 import type { Facing } from '../../lib/sim/types';
 import { world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
-import { isWorldInputBlocked } from '../inputCapture';
+import { consumePadAction, isWorldInputBlocked } from '../inputCapture';
 import { pickAdjacentEntity } from './interactTarget';
 
 export interface ProximitySpawnArgs {
@@ -99,6 +99,17 @@ export function installProximitySystem(scene: Phaser.Scene): () => void {
     else if (ring.ring === 'approach') frameApproach.add(ring.entityId);
   });
 
+  const onEnter = () => {
+    if (isWorldInputBlocked()) return;
+
+    // Tile adjacency is the sim's definition of reach (`isAdjacent`). The overlap
+    // set is a 60fps hint; Enter is a moment, so we ask the store. Solid chests
+    // keep the player tangent to a 1-tile circle, which arcade does not count as
+    // overlap, so `heldReach` is often empty when you are standing right there.
+    const best = pickAdjacentEntity(world(), s.facing);
+    if (best) bus.emit('world:interact', { entityId: best.id });
+  };
+
   const flush = () => {
     for (const id of frameApproach) {
       if (!heldApproach.has(id)) {
@@ -125,20 +136,11 @@ export function installProximitySystem(scene: Phaser.Scene): () => void {
     }
     frameReach.clear();
     frameApproach.clear();
+    if (consumePadAction('enter')) onEnter();
   };
   scene.events.on('postupdate', flush);
 
   const enter = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER, false);
-  const onEnter = () => {
-    if (isWorldInputBlocked()) return;
-
-    // Tile adjacency is the sim's definition of reach (`isAdjacent`). The overlap
-    // set is a 60fps hint; Enter is a moment, so we ask the store. Solid chests
-    // keep the player tangent to a 1-tile circle, which arcade does not count as
-    // overlap, so `heldReach` is often empty when you are standing right there.
-    const best = pickAdjacentEntity(world(), s.facing);
-    if (best) bus.emit('world:interact', { entityId: best.id });
-  };
   enter.on('down', onEnter);
 
   return () => {
