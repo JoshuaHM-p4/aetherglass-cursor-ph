@@ -58,10 +58,11 @@ export default function Pane(): JSX.Element {
     const onEsc = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
+      if (event.target instanceof HTMLElement) event.target.blur();
       requestSessionDismiss();
     };
-    window.addEventListener('keydown', onEsc);
-    return () => window.removeEventListener('keydown', onEsc);
+    window.addEventListener('keydown', onEsc, true);
+    return () => window.removeEventListener('keydown', onEsc, true);
   }, [activeEntityId]);
 
   useEffect(() => {
@@ -296,6 +297,7 @@ function PaneInput({
   }, [disabled]);
 
   const keepKeys = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') return;
     event.stopPropagation();
   };
 

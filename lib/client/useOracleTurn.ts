@@ -8,6 +8,7 @@ import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { bus } from '../../game/EventBus';
+import { setPaneTyping } from '../../game/inputCapture';
 import { emptyJournal, isTurnCommitted, record, type PaneJournal } from '../oracle/journal';
 import type { ChoicesData, FocusData, OfferedChoice, TurnId, Verdict } from '../oracle/protocol';
 import { verdictKey } from '../oracle/protocol';
@@ -298,6 +299,7 @@ export function useOracleTurn(): OracleTurnApi {
       setRack(null);
       setMessagesRef.current([]);
       journalRef.current = emptyJournal();
+      setPaneTyping(false);
       bus.emit('pane:focus_clear', {});
       bus.emit('pane:awake', { open: false, reason: 'closed' });
       bump((n) => n + 1);

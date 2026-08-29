@@ -14,7 +14,6 @@ type Cue =
   | 'glass'
   | 'glass_close'
   | 'pickup'
-  | 'drone'
   | 'death';
 
 const VOL: Record<Cue, number> = {
@@ -27,7 +26,6 @@ const VOL: Record<Cue, number> = {
   glass: 0.28,
   glass_close: 0.18,
   pickup: 0.24,
-  drone: 0.07,
   death: 0.42,
 };
 
@@ -35,8 +33,6 @@ type Bank = Record<Cue, AudioBuffer>;
 
 let ctx: AudioContext | null = null;
 let bank: Bank | null = null;
-let drone: AudioBufferSourceNode | null = null;
-let droneGain: GainNode | null = null;
 let glassOpen = false;
 let stepFlip = false;
 
@@ -129,13 +125,6 @@ function buildBank(a: AudioContext): Bank {
         noise() * 0.12 * Math.exp(-t * 4)
       ) * e;
     }),
-    drone: bake(a, 4, (t) => {
-      return (
-        Math.sin(2 * Math.PI * 55 * t) * 0.45 +
-        Math.sin(2 * Math.PI * 82.5 * t) * 0.28 +
-        Math.sin(2 * Math.PI * 110 * t) * 0.08
-      ) * 0.35;
-    }),
   };
 }
 
@@ -152,35 +141,6 @@ function play(cue: Cue, rate = 1): void {
   src.start();
 }
 
-function startDrone(): void {
-  const a = audio();
-  if (!a || !bank || drone) return;
-  resume();
-  const src = a.createBufferSource();
-  src.buffer = bank.drone;
-  src.loop = true;
-  const gain = a.createGain();
-  gain.gain.value = 0;
-  src.connect(gain).connect(a.destination);
-  src.start();
-  gain.gain.linearRampToValueAtTime(VOL.drone, a.currentTime + 1.6);
-  drone = src;
-  droneGain = gain;
-  src.onended = () => {
-    if (drone === src) drone = null;
-  };
-}
-
-function stopDrone(): void {
-  try {
-    drone?.stop();
-  } catch {
-    /* already stopped */
-  }
-  drone = null;
-  droneGain = null;
-}
-
 export function playSfx(cue: 'swing' | 'hit'): void {
   if (cue === 'swing') play('swing', 0.92 + Math.random() * 0.16);
   else play('hit', 0.94 + Math.random() * 0.12);
@@ -192,13 +152,10 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
 
   const unlock = () => {
     resume();
-    startDrone();
   };
   scene.input.on('pointerdown', unlock);
   const onKey = () => unlock();
   window.addEventListener('keydown', onKey);
-
-  startDrone();
 
   const offTile = bus.on('world:tile_entered', () => {
     stepFlip = !stepFlip;
@@ -210,19 +167,7 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
     if (event.type === 'item_gained') play('pickup', 1 + Math.random() * 0.08);
     if (event.type === 'entity_struck') play('hit', 0.94 + Math.random() * 0.12);
     if (event.type === 'pane_cracked') play('glass_close', 1.3);
-    if (event.type === 'player_died') {
-      play('death');
-      if (droneGain && ctx) {
-        droneGain.gain.cancelScheduledValues(ctx.currentTime);
-        droneGain.gain.linearRampToValueAtTime(0.02, ctx.currentTime + 0.4);
-      }
-    }
-  });
-  const offHydrate = bus.on('sim:hydrated', () => {
-    if (droneGain && ctx) {
-      droneGain.gain.cancelScheduledValues(ctx.currentTime);
-      droneGain.gain.linearRampToValueAtTime(VOL.drone, ctx.currentTime + 0.8);
-    }
+    if (event.type === 'player_died') play('death');
   });
   const offAwake = bus.on('pane:awake', ({ open }) => {
     if (open && !glassOpen) play('glass');
@@ -234,10 +179,8 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
     offTile();
     offHurt();
     offEvent();
-    offHydrate();
     offAwake();
     scene.input.off('pointerdown', unlock);
     window.removeEventListener('keydown', onKey);
-    stopDrone();
   };
 }

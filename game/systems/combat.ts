@@ -109,7 +109,6 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     clearShake();
     flashTimer?.remove(false);
     s.player.setTint(COMBAT.hurtTint).setTintMode(Phaser.TintModes.FILL).setAlpha(1);
-    scene.cameras.main.shake(COMBAT.hurtShakeMs, 0.005);
     flashTimer = scene.time.delayedCall(COMBAT.hurtFlashMs, () => {
       if (scene.time.now < iframeUntil) {
         s.player.setTintMode(Phaser.TintModes.MULTIPLY).setTint(COMBAT.hurtTint);
