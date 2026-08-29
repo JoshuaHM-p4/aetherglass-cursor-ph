@@ -18,7 +18,7 @@ type Host = Phaser.Scene & {
   walls: Phaser.Physics.Arcade.StaticGroup;
 };
 
-const PINCER_REACH = 40;
+const PINCER_REACH = 22;
 const CHARGE = 120;
 const DROP_MS = 720;
 const ROAR_MS = 900;
@@ -76,7 +76,7 @@ export function installCrabAi(scene: Phaser.Scene): () => void {
     bus.emit('world:boss_intro', { playing: true, revealed: false });
     sizeCrab(crab);
     crab.setAlpha(0);
-    crab.setPosition(landX, landY - 88);
+    crab.setPosition(landX, landY - 56);
     const body = crab.body as Phaser.Physics.Arcade.Body | null;
     if (body) {
       body.enable = false;
@@ -106,7 +106,7 @@ export function installCrabAi(scene: Phaser.Scene): () => void {
   const pincerHit = (side: -1 | 1) => {
     const crab = spriteOf();
     if (!crab) return;
-    const dx = s.player.x - (crab.x + side * 18);
+    const dx = s.player.x - (crab.x + side * 10);
     const dy = s.player.y - crab.y;
     if (Math.hypot(dx, dy) < PINCER_REACH) {
       const away = dirFromTo(crab.x, crab.y, s.player.x, s.player.y);
@@ -152,7 +152,7 @@ export function installCrabAi(scene: Phaser.Scene): () => void {
     const now = scene.time.now;
     const body = crab.body as Phaser.Physics.Arcade.Body | null;
     if (!body) return;
-    const pad = 28;
+    const pad = 18;
     const max = ROOM_SIZE * TILE - pad;
     if (isKnocking(crab, now)) return;
 

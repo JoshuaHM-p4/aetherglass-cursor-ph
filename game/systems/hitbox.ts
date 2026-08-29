@@ -14,11 +14,14 @@ export const SWING_CONE = {
   enemyRadiusPx: 14,
 } as const;
 
-/** Visual scale of the dungeon crab (16px tile × this ≈ four tiles). */
-export const CRAB_SCALE = 4;
-/** Unscaled arcade box; × CRAB_SCALE ≈ 2.5 tiles so the room stays walkable. */
-export const CRAB_BODY = 10;
-export const CRAB_RADIUS_PX = 28;
+/** Visual scale: 16px tile × 2 = 32px, a 2×2 (four-tile) footprint. */
+export const CRAB_SCALE = 2;
+/** Unscaled arcade box; × CRAB_SCALE = 1 tile so the 12×12 stays walkable. */
+export const CRAB_BODY = 8;
+/** Sword/bolt disk. Matches the visible half-sprite, not a room-wide blob. */
+export const CRAB_HIT_RADIUS_PX = 16;
+/** Body-bump damage. Tighter than the art so claws are not a kill aura. */
+export const CRAB_CONTACT_PX = 12;
 
 function axis(facing: Facing): { x: number; y: number } {
   if (facing === 'right') return { x: 1, y: 0 };
@@ -76,12 +79,12 @@ export function inEnemyContact(
 }
 
 export function foeRadiusPx(tags: readonly string[]): number {
-  if (tags.includes('crab') || tags.includes('boss')) return CRAB_RADIUS_PX;
+  if (tags.includes('crab') || tags.includes('boss')) return CRAB_HIT_RADIUS_PX;
   return SWING_CONE.enemyRadiusPx;
 }
 
 export function foeContactReach(tags: readonly string[]): number {
-  if (tags.includes('crab') || tags.includes('boss')) return CRAB_RADIUS_PX;
+  if (tags.includes('crab') || tags.includes('boss')) return CRAB_CONTACT_PX;
   return ACTOR_BODY + 1;
 }
 

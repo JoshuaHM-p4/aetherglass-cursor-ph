@@ -61,8 +61,9 @@ describe('inEnemyContact', () => {
   });
 
   it('uses a wider reach for the dungeon crab', () => {
-    expect(foeContactReach(['crab', 'elite', 'boss'])).toBe(28);
-    expect(inEnemyContact(px, py, px + 20, py, 28)).toBe(true);
+    expect(foeContactReach(['crab', 'elite', 'boss'])).toBe(12);
+    expect(inEnemyContact(px, py, px + 10, py, 12)).toBe(true);
+    expect(inEnemyContact(px, py, px + 16, py, 12)).toBe(false);
     expect(inEnemyContact(px, py, px + 20, py)).toBe(false);
   });
 });
