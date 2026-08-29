@@ -17,6 +17,7 @@ import { world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
 import { getHotbarSlot, isWorldInputBlocked } from '../inputCapture';
 import { swingHitbox } from './hitbox';
+import { hurtShakeOffset } from './hurtFx';
 import { playSfx } from './sound';
 
 export { swingHitbox } from './hitbox';
@@ -37,6 +38,12 @@ export const COMBAT = {
   cooldownMs: 260,
   /** Player invulnerability after being hit, so contact damage cannot chain-kill. */
   iFramesMs: 700,
+  /** Solid red FILL flash before the multiply-tint blink. */
+  hurtFlashMs: 80,
+  /** Sprite-local shake; shorter than i-frames so the wobble dies before you can be hit again. */
+  hurtShakeMs: 260,
+  hurtShakePx: 3,
+  hurtTint: 0xff2a2a,
 } as const;
 
 /**
@@ -73,6 +80,42 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
   const space = scene.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE, false);
   let cooldownUntil = 0;
   let iframeUntil = 0;
+  let hurtAt = 0;
+  let shakeX = 0;
+  let shakeY = 0;
+  let flashTimer: Phaser.Time.TimerEvent | null = null;
+
+  const clearShake = (): void => {
+    if (!shakeX && !shakeY) return;
+    s.player.x -= shakeX;
+    s.player.y -= shakeY;
+    shakeX = 0;
+    shakeY = 0;
+  };
+
+  const endHurtVisual = (): void => {
+    clearShake();
+    flashTimer?.remove(false);
+    flashTimer = null;
+    s.player.setTintMode(Phaser.TintModes.MULTIPLY);
+    s.player.clearTint();
+    s.player.setAlpha(1);
+  };
+
+  const playHurt = (): void => {
+    const now = scene.time.now;
+    iframeUntil = now + COMBAT.iFramesMs;
+    hurtAt = now;
+    clearShake();
+    flashTimer?.remove(false);
+    s.player.setTint(COMBAT.hurtTint).setTintMode(Phaser.TintModes.FILL).setAlpha(1);
+    scene.cameras.main.shake(COMBAT.hurtShakeMs, 0.005);
+    flashTimer = scene.time.delayedCall(COMBAT.hurtFlashMs, () => {
+      if (scene.time.now < iframeUntil) {
+        s.player.setTintMode(Phaser.TintModes.MULTIPLY).setTint(COMBAT.hurtTint);
+      }
+    });
+  };
 
   const onSpace = () => {
     if (isWorldInputBlocked()) return;
@@ -103,24 +146,51 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
 
   space.on('down', onSpace);
 
+  const onPreUpdate = () => {
+    clearShake();
+  };
+
   const onUpdate = () => {
     const now = scene.time.now;
-    if (now < iframeUntil) return;
-    for (const obj of s.entityLayer.list) {
-      const sprite = obj as Phaser.Physics.Arcade.Sprite;
-      const entity = world().entities[sprite.name];
-      if (!entity || (entity.kind !== 'enemy' && entity.kind !== 'elite')) continue;
-      if (entity.state === 'dead') continue;
-      const dx = Math.abs(sprite.x - s.player.x);
-      const dy = Math.abs(sprite.y - s.player.y);
-      if (dx <= CONTACT_RANGE && dy <= CONTACT_RANGE) {
-        iframeUntil = now + COMBAT.iFramesMs;
-        bus.emit('world:player_hurt', { amount: 1, source: entity.name });
-        return;
+    const hurting = hurtAt !== 0 && now < hurtAt + COMBAT.iFramesMs;
+    if (!hurting && hurtAt !== 0) {
+      endHurtVisual();
+      hurtAt = 0;
+    }
+
+    if (now >= iframeUntil && world().player.hp > 0) {
+      for (const obj of s.entityLayer.list) {
+        const sprite = obj as Phaser.Physics.Arcade.Sprite;
+        const entity = world().entities[sprite.name];
+        if (!entity || (entity.kind !== 'enemy' && entity.kind !== 'elite')) continue;
+        if (entity.state === 'dead') continue;
+        const dx = Math.abs(sprite.x - s.player.x);
+        const dy = Math.abs(sprite.y - s.player.y);
+        if (dx <= CONTACT_RANGE && dy <= CONTACT_RANGE) {
+          playHurt();
+          bus.emit('world:player_hurt', { amount: 1, source: entity.name });
+          break;
+        }
       }
     }
   };
+
+  const onPostUpdate = () => {
+    const now = scene.time.now;
+    if (hurtAt === 0 || now >= hurtAt + COMBAT.iFramesMs) return;
+    const shake = hurtShakeOffset(now - hurtAt, COMBAT.hurtShakeMs, COMBAT.hurtShakePx);
+    shakeX = shake.x;
+    shakeY = shake.y;
+    s.player.x += shakeX;
+    s.player.y += shakeY;
+    if (now >= hurtAt + COMBAT.hurtFlashMs) {
+      s.player.setAlpha(Math.floor(now / 60) % 2 === 0 ? 1 : 0.35);
+    }
+  };
+
+  scene.events.on('preupdate', onPreUpdate);
   scene.events.on('update', onUpdate);
+  scene.events.on('postupdate', onPostUpdate);
 
   const offEvent = bus.on('sim:event', (event) => {
     if (event.type === 'entity_struck') {
@@ -139,11 +209,26 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
       sprite.setTint(DEAD_TINT).setAlpha(0.5);
       if (sprite.body) sprite.body.enable = false;
     }
+    if (event.type === 'player_died') {
+      hurtAt = 0;
+      endHurtVisual();
+    }
+  });
+
+  const offHydrate = bus.on('sim:hydrated', () => {
+    iframeUntil = 0;
+    hurtAt = 0;
+    endHurtVisual();
   });
 
   return () => {
     space.off('down', onSpace);
+    scene.events.off('preupdate', onPreUpdate);
     scene.events.off('update', onUpdate);
+    scene.events.off('postupdate', onPostUpdate);
+    flashTimer?.remove(false);
+    endHurtVisual();
     offEvent();
+    offHydrate();
   };
 }

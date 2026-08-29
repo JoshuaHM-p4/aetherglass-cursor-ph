@@ -99,12 +99,16 @@ export interface GameStore {
   /** Boot / LDtk load. Resets rev to 0 and the applied-verdict set. */
   hydrate(state: GameState): void;
 
+  /** Replay the last hydrated snapshot. Not an Action — the world is replaced, not mutated. */
+  restart(): void;
+
   /** Enter on an adjacent entity. Not an Action: the target is UI fact, not world fact. */
   setInteractTarget(entityId: string | null): void;
 }
 
 export const gameStore = createStore<GameStore>((set, get) => {
   const appliedKeys = new Set<string>();
+  let seed = initialState();
   return {
     state: initialState(),
     rev: 0,
@@ -139,8 +143,12 @@ export const gameStore = createStore<GameStore>((set, get) => {
     },
     hydrate(state) {
       appliedKeys.clear();
+      seed = structuredClone(state);
       set({ state, rev: 0 });
       bus.emit('sim:hydrated', { entityCount: Object.keys(state.entities).length });
+    },
+    restart() {
+      get().hydrate(structuredClone(seed));
     },
     setInteractTarget(entityId) {
       const next = structuredClone(get().state);

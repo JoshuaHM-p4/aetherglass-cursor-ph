@@ -100,7 +100,9 @@ export type Action =
   // [+] The sword. Without this, Phaser's combat system has no way to reduce
   // Entity.hp and would have to keep its own copy of enemy health — which
   // AGENTS.md forbids and ARCHITECTURE §1.3 calls out by name.
-  | { type: 'STRIKE_ENTITY'; entityId: string; amount: number; withItemId: string | null };
+  | { type: 'STRIKE_ENTITY'; entityId: string; amount: number; withItemId: string | null }
+  | { type: 'SET_HOTBAR'; slot: 0 | 1 | 2; itemId: string | null }
+  | { type: 'SWAP_BAG'; a: number; b: number };
 
 /** snake_case, surfaced to the model verbatim so it can narrate its own failure. */
 export type RejectReason =
@@ -125,7 +127,8 @@ export type SimEvent =
   | { type: 'pane_cracked'; integrity: number }
   // [+] Phaser needs a hit-spark and a knockback tween at the moment of impact,
   // distinct from the player being damaged.
-  | { type: 'entity_struck'; entityId: string; amount: number; hpLeft: number };
+  | { type: 'entity_struck'; entityId: string; amount: number; hpLeft: number }
+  | { type: 'player_died'; source: string };
 
 export interface ActionResult {
   state: GameState;

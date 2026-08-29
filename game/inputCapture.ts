@@ -1,6 +1,8 @@
 // Keyboard ownership when the glass or bag is open. Phaser reads this on the 60fps
 // path; React writes it. No EventBus key — BusEvents is frozen.
 
+import { world } from '../lib/sim/store';
+
 let bagOpen = false;
 let hotbarSlot = 0;
 /** True while the glass is holding the keyboard (focused speak field or thinking). */
@@ -33,9 +35,10 @@ export function cycleHotbar(dir: 1 | -1): number {
 
 /**
  * True when arrows / Space / WASD must not move or swing: the player is typing in
- * the Pane, clicking a choice, or looking at the bag.
+ * the Pane, clicking a choice, looking at the bag, or has fallen.
  */
 export function isWorldInputBlocked(): boolean {
+  if (world().player.hp <= 0) return true;
   if (bagOpen || paneTyping) return true;
   if (typeof document === 'undefined') return false;
   const el = document.activeElement;

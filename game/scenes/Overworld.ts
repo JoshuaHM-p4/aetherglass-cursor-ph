@@ -121,6 +121,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   private prev: GameState | null = null;
   private unsubStore: (() => void) | null = null;
   private unsubHydrate: (() => void) | null = null;
+  private unsubDied: (() => void) | null = null;
   private teardownCombat: (() => void) | null = null;
   private teardownProximity: (() => void) | null = null;
   private teardownFocus: (() => void) | null = null;
@@ -188,7 +189,17 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       this.syncFromStore();
     });
 
-    this.unsubHydrate = bus.on('sim:hydrated', () => this.spawnEntities());
+    this.unsubHydrate = bus.on('sim:hydrated', () => {
+      this.resetPlayer();
+      this.spawnEntities();
+    });
+    this.unsubDied = bus.on('sim:event', (event) => {
+      if (event.type !== 'player_died') return;
+      this.player.setVelocity(0, 0);
+      this.haltWalk();
+      this.player.setTint(DEAD_TINT);
+      this.player.setAngle(90);
+    });
     this.prev = world();
     // Phaser emits SHUTDOWN but never calls the method, and a restarted scene that
     // subscribed twice moves the player two tiles per keypress.
@@ -254,9 +265,24 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     if (this.player.texture.key !== 'tex-player') this.player.setTexture('tex-player');
   }
 
+  private resetPlayer(): void {
+    const start = world().player;
+    this.facing = start.facing;
+    this.lastTx = start.tx;
+    this.lastTy = start.ty;
+    this.player.setPosition(start.tx * TILE + 8, start.ty * TILE + 8);
+    this.player.setVelocity(0, 0);
+    this.player.setFlipX(start.facing === 'left');
+    this.player.setAngle(0);
+    this.player.setAlpha(1);
+    this.player.clearTint();
+    this.haltWalk();
+  }
+
   shutdown(): void {
     this.unsubStore?.();
     this.unsubHydrate?.();
+    this.unsubDied?.();
     this.teardownCombat?.();
     this.teardownProximity?.();
     this.teardownFocus?.();
@@ -264,6 +290,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownSound?.();
     this.unsubStore = null;
     this.unsubHydrate = null;
+    this.unsubDied = null;
     this.teardownCombat = null;
     this.teardownProximity = null;
     this.teardownFocus = null;

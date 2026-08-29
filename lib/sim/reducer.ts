@@ -84,6 +84,7 @@ function consume(state: GameState, itemId: string, qty: number): void {
   existing.qty -= qty;
   if (existing.qty <= 0) {
     state.player.bag = state.player.bag.filter((item) => item !== existing);
+    state.player.hotbar = state.player.hotbar.map((id) => (id === itemId ? null : id)) as typeof state.player.hotbar;
   }
 }
 
@@ -101,8 +102,13 @@ function commit(state: GameState, action: Action): SimEvent[] {
     }
     case 'DAMAGE': {
       const amount = clamp(action.amount, 0, LIMITS.damagePerEffect);
+      const before = state.player.hp;
       state.player.hp = Math.max(0, state.player.hp - amount);
-      return [{ type: 'damaged', amount, source: action.source }];
+      const events: SimEvent[] = [{ type: 'damaged', amount, source: action.source }];
+      if (before > 0 && state.player.hp <= 0) {
+        events.push({ type: 'player_died', source: action.source });
+      }
+      return events;
     }
     case 'HEAL': {
       const amount = clamp(action.amount, 0, LIMITS.healPerEffect);
@@ -169,6 +175,17 @@ function commit(state: GameState, action: Action): SimEvent[] {
       }
       return events;
     }
+    case 'SET_HOTBAR': {
+      state.player.hotbar[action.slot] = action.itemId;
+      return [];
+    }
+    case 'SWAP_BAG': {
+      const bag = state.player.bag;
+      const tmp = bag[action.a]!;
+      bag[action.a] = bag[action.b]!;
+      bag[action.b] = tmp;
+      return [];
+    }
   }
 }
 
@@ -200,6 +217,8 @@ export function describeEvent(state: GameState, event: SimEvent): string {
       return `the pane cracked (${event.integrity})`;
     case 'entity_struck':
       return `struck the ${named(event.entityId)} for ${event.amount}`;
+    case 'player_died':
+      return `fell to the ${event.source}`;
   }
 }
 

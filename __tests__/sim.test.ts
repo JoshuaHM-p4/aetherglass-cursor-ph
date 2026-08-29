@@ -88,6 +88,59 @@ describe('sim failure modes', () => {
     expect(result.reason).toBe('bag_full');
   });
 
+  it('SET_HOTBAR parks a held item and clears a slot', () => {
+    const state = initialState();
+    state.player.bag.push(instantiate('crowbar'));
+    const parked = applyAction(state, { type: 'SET_HOTBAR', slot: 1, itemId: 'crowbar' });
+    expect(parked.ok).toBe(true);
+    expect(parked.state.player.hotbar).toEqual(['sword_short', 'crowbar', null]);
+    const cleared = applyAction(parked.state, { type: 'SET_HOTBAR', slot: 0, itemId: null });
+    expect(cleared.ok).toBe(true);
+    expect(cleared.state.player.hotbar).toEqual([null, 'crowbar', null]);
+  });
+
+  it('SET_HOTBAR rejects an item that is not in the bag', () => {
+    const state = initialState();
+    const result = applyAction(state, { type: 'SET_HOTBAR', slot: 2, itemId: 'crowbar' });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('not_in_bag');
+  });
+
+  it('SWAP_BAG exchanges two occupied cells', () => {
+    const state = initialState();
+    state.player.bag.push(instantiate('crowbar'));
+    const result = applyAction(state, { type: 'SWAP_BAG', a: 0, b: 1 });
+    expect(result.ok).toBe(true);
+    expect(result.state.player.bag.map((item) => item.id)).toEqual(['crowbar', 'sword_short']);
+  });
+
+  it('CONSUME_ITEM clears matching hotbar refs', () => {
+    const state = initialState();
+    const result = applyAction(state, { type: 'CONSUME_ITEM', itemId: 'sword_short' });
+    expect(result.ok).toBe(true);
+    expect(result.state.player.bag).toEqual([]);
+    expect(result.state.player.hotbar).toEqual([null, null, null]);
+  });
+
+  it('DAMAGE that empties hp emits player_died', () => {
+    const state = initialState();
+    state.player.hp = 3;
+    const result = applyAction(state, { type: 'DAMAGE', amount: 4, source: 'slime' });
+    expect(result.ok).toBe(true);
+    expect(result.state.player.hp).toBe(0);
+    expect(result.events).toContainEqual({ type: 'player_died', source: 'slime' });
+  });
+
+  it('DAMAGE on a corpse → already_dead', () => {
+    const state = initialState();
+    state.player.hp = 1;
+    const dead = applyAction(state, { type: 'DAMAGE', amount: 4, source: 'slime' });
+    expect(dead.ok).toBe(true);
+    const again = applyAction(dead.state, { type: 'DAMAGE', amount: 1, source: 'slime' });
+    expect(again.ok).toBe(false);
+    expect(again.reason).toBe('already_dead');
+  });
+
   it('applyBatch with a bad second effect → nothing applied', () => {
     const state = initialState();
     const hp = state.player.hp;

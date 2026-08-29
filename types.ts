@@ -110,7 +110,8 @@ export type SimEvent =
   | { type: 'entity_state_changed'; entityId: string; state: EntityState }
   | { type: 'crafted'; recipeId: string; itemId: string }
   | { type: 'flag_set'; flag: string; value: boolean }
-  | { type: 'pane_cracked'; integrity: number };
+  | { type: 'pane_cracked'; integrity: number }
+  | { type: 'player_died'; source: string };
 
 export interface ActionResult {
   state: GameState;

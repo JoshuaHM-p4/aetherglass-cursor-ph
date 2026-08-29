@@ -14,7 +14,8 @@ type Cue =
   | 'glass'
   | 'glass_close'
   | 'pickup'
-  | 'drone';
+  | 'drone'
+  | 'death';
 
 const VOL: Record<Cue, number> = {
   step_a: 0.22,
@@ -27,6 +28,7 @@ const VOL: Record<Cue, number> = {
   glass_close: 0.18,
   pickup: 0.24,
   drone: 0.07,
+  death: 0.42,
 };
 
 type Bank = Record<Cue, AudioBuffer>;
@@ -118,6 +120,15 @@ function buildBank(a: AudioContext): Bank {
       const f = 660 + t * 400;
       return Math.sin(2 * Math.PI * f * t) * e * 0.5;
     }),
+    death: bake(a, 1.4, (t, dur) => {
+      const e = env(t, 0.02, 0.7, dur);
+      const f = 180 - t * 110;
+      return (
+        Math.sin(2 * Math.PI * Math.max(40, f) * t) * 0.55 +
+        Math.sin(2 * Math.PI * 784 * t) * Math.exp(-t * 6) * 0.18 +
+        noise() * 0.12 * Math.exp(-t * 4)
+      ) * e;
+    }),
     drone: bake(a, 4, (t) => {
       return (
         Math.sin(2 * Math.PI * 55 * t) * 0.45 +
@@ -199,6 +210,19 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
     if (event.type === 'item_gained') play('pickup', 1 + Math.random() * 0.08);
     if (event.type === 'entity_struck') play('hit', 0.94 + Math.random() * 0.12);
     if (event.type === 'pane_cracked') play('glass_close', 1.3);
+    if (event.type === 'player_died') {
+      play('death');
+      if (droneGain && ctx) {
+        droneGain.gain.cancelScheduledValues(ctx.currentTime);
+        droneGain.gain.linearRampToValueAtTime(0.02, ctx.currentTime + 0.4);
+      }
+    }
+  });
+  const offHydrate = bus.on('sim:hydrated', () => {
+    if (droneGain && ctx) {
+      droneGain.gain.cancelScheduledValues(ctx.currentTime);
+      droneGain.gain.linearRampToValueAtTime(VOL.drone, ctx.currentTime + 0.8);
+    }
   });
   const offAwake = bus.on('pane:awake', ({ open }) => {
     if (open && !glassOpen) play('glass');
@@ -210,6 +234,7 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
     offTile();
     offHurt();
     offEvent();
+    offHydrate();
     offAwake();
     scene.input.off('pointerdown', unlock);
     window.removeEventListener('keydown', onKey);

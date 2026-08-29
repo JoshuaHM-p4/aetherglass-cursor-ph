@@ -156,6 +156,20 @@ export const guards: Guards = {
     if (entity.state === 'dead') return fail('already_dead');
     return PASS;
   },
+
+  SET_HOTBAR: (state, action) => {
+    if (action.slot !== 0 && action.slot !== 1 && action.slot !== 2) return fail('no_such_item');
+    if (action.itemId === null) return PASS;
+    if (!findItem(state, action.itemId)) return fail('not_in_bag');
+    return PASS;
+  },
+
+  SWAP_BAG: (state, action) => {
+    const n = state.player.bag.length;
+    if (action.a === action.b) return fail('no_such_item');
+    if (action.a < 0 || action.b < 0 || action.a >= n || action.b >= n) return fail('no_such_item');
+    return PASS;
+  },
 };
 
 /**
