@@ -99,6 +99,17 @@ describe('sim failure modes', () => {
     expect(cleared.state.player.hotbar).toEqual([null, 'crowbar', null]);
   });
 
+  it('SET_HOTBAR moves an equipped item instead of duplicating it', () => {
+    const state = initialState();
+    state.player.bag.push(instantiate('crowbar'));
+    const first = applyAction(state, { type: 'SET_HOTBAR', slot: 1, itemId: 'crowbar' });
+    const moved = applyAction(first.state, { type: 'SET_HOTBAR', slot: 2, itemId: 'crowbar' });
+    expect(moved.ok).toBe(true);
+    expect(moved.state.player.hotbar).toEqual(['sword_short', null, 'crowbar']);
+    const ontoSword = applyAction(moved.state, { type: 'SET_HOTBAR', slot: 0, itemId: 'crowbar' });
+    expect(ontoSword.state.player.hotbar).toEqual(['crowbar', null, null]);
+  });
+
   it('SET_HOTBAR rejects an item that is not in the bag', () => {
     const state = initialState();
     const result = applyAction(state, { type: 'SET_HOTBAR', slot: 2, itemId: 'crowbar' });

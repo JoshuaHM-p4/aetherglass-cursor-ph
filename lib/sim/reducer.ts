@@ -176,7 +176,11 @@ function commit(state: GameState, action: Action): SimEvent[] {
       return events;
     }
     case 'SET_HOTBAR': {
-      state.player.hotbar[action.slot] = action.itemId;
+      state.player.hotbar = state.player.hotbar.map((id, i) => {
+        if (i === action.slot) return action.itemId;
+        if (action.itemId !== null && id === action.itemId) return null;
+        return id;
+      }) as typeof state.player.hotbar;
       return [];
     }
     case 'SWAP_BAG': {

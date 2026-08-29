@@ -28,6 +28,7 @@ import { DEAD_TINT, installCombatSystem } from '../systems/combat';
 import { installFocusSystem } from '../systems/focus';
 import { attachProximityRings, installProximitySystem } from '../systems/proximity';
 import { installSessionMarks } from '../systems/sessionMark';
+import { plantRoomFade } from '../systems/roomFade';
 import { installSoundSystem } from '../systems/sound';
 
 export interface OverworldRefs {
@@ -143,6 +144,12 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       this.placeWall(0, ty);
       this.placeWall(MAP_W - 1, ty);
     }
+    plantRoomFade(this, {
+      mapW: MAP_W,
+      mapH: MAP_H,
+      tile: TILE,
+      wallKeyAt: (tx, ty) => wallTexture(tx, ty, this),
+    });
 
     const start = world().player;
     this.facing = start.facing;
