@@ -161,6 +161,14 @@ export function writeSave(state: GameState): void {
   writeFile({ slots });
 }
 
+export function clearSlot(index: SlotIndex): void {
+  ensureHydrated();
+  const slots: SlotFile['slots'] = [cachedSlots[0], cachedSlots[1], cachedSlots[2]];
+  slots[index] = null;
+  writeFile({ slots });
+  if (getActiveSlot() === index) storage()?.removeItem(ACTIVE_KEY);
+}
+
 export function clearSave(): void {
   const store = storage();
   store?.removeItem(SLOTS_KEY);

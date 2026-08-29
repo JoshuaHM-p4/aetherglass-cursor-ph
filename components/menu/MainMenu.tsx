@@ -7,6 +7,7 @@ import { NAME_MAX, sanitizePlayerName } from '../../lib/client/playerName';
 import { setPlaying } from '../../lib/client/play';
 import {
   atFountain,
+  clearSlot,
   emptySlots,
   listSlots,
   setActiveSlot,
@@ -29,6 +30,7 @@ export default function MainMenu(): JSX.Element {
   const slots = useSyncExternalStore(subscribeSaves, listSlots, emptySlots);
   const [view, setView] = useState<View>('title');
   const [createSlot, setCreateSlot] = useState<SlotIndex>(0);
+  const [erasing, setErasing] = useState<SlotIndex | null>(null);
   const [settingsOpen, setSettings] = useState(false);
 
   useEffect(() => {
@@ -49,6 +51,10 @@ export default function MainMenu(): JSX.Element {
         return;
       }
       if (view === 'slots') {
+        if (erasing !== null) {
+          setErasing(null);
+          return;
+        }
         setView('title');
         return;
       }
@@ -56,7 +62,7 @@ export default function MainMenu(): JSX.Element {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [view, settingsOpen]);
+  }, [view, settingsOpen, erasing]);
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-20" data-menu>
@@ -86,18 +92,34 @@ export default function MainMenu(): JSX.Element {
         {view === 'slots' && (
           <SlotsView
             slots={slots}
+            erasing={erasing}
             onBack={() => {
               playFileSfx('close');
+              setErasing(null);
               setView('title');
             }}
             onEmpty={(index) => {
               playFileSfx('select');
+              setErasing(null);
               setCreateSlot(index);
               setView('create');
             }}
             onOccupied={(index, state) => {
               playFileSfx('select');
               continueSlot(index, state);
+            }}
+            onAskErase={(index) => {
+              playFileSfx('cursor');
+              setErasing(index);
+            }}
+            onKeep={() => {
+              playFileSfx('close');
+              setErasing(null);
+            }}
+            onErase={(index) => {
+              playFileSfx('close');
+              clearSlot(index);
+              setErasing(null);
             }}
           />
         )}
@@ -146,14 +168,22 @@ function TitleView({ onPlay }: { onPlay: () => void }): JSX.Element {
 
 function SlotsView({
   slots,
+  erasing,
   onBack,
   onEmpty,
   onOccupied,
+  onAskErase,
+  onKeep,
+  onErase,
 }: {
   slots: Array<GameState | null>;
+  erasing: SlotIndex | null;
   onBack: () => void;
   onEmpty: (index: SlotIndex) => void;
   onOccupied: (index: SlotIndex, state: GameState) => void;
+  onAskErase: (index: SlotIndex) => void;
+  onKeep: () => void;
+  onErase: (index: SlotIndex) => void;
 }): JSX.Element {
   return (
     <div className="flex w-full max-w-[920px] flex-col items-center gap-6">
@@ -161,15 +191,43 @@ function SlotsView({
       <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
         {SLOT_INDEXES.map((index) => {
           const state = slots[index];
+          if (!state) {
+            return (
+              <button
+                key={index}
+                type="button"
+                onClick={() => onEmpty(index)}
+                className="pane-glass flex min-h-[168px] flex-col items-stretch px-3 py-3 text-left hover:border-amber-200/60"
+              >
+                <EmptySlot />
+              </button>
+            );
+          }
+          if (erasing === index) {
+            return (
+              <div key={index} className="pane-glass flex min-h-[168px] flex-col px-3 py-3">
+                <EraseConfirm name={state.player.name} onKeep={onKeep} onErase={() => onErase(index)} />
+              </div>
+            );
+          }
           return (
-            <button
-              key={index}
-              type="button"
-              onClick={() => (state ? onOccupied(index, state) : onEmpty(index))}
-              className="pane-glass flex min-h-[168px] flex-col items-stretch px-3 py-3 text-left hover:border-amber-200/60"
-            >
-              {state ? <OccupiedSlot state={state} /> : <EmptySlot />}
-            </button>
+            <div key={index} className="pane-glass flex min-h-[168px] flex-col px-3 py-3 hover:border-amber-200/60">
+              <button
+                type="button"
+                onClick={() => onOccupied(index, state)}
+                className="flex min-h-0 flex-1 flex-col items-stretch text-left"
+              >
+                <OccupiedSlot state={state} />
+              </button>
+              <button
+                type="button"
+                aria-label={`erase ${state.player.name}`}
+                onClick={() => onAskErase(index)}
+                className="mt-2 self-end font-pixel text-[7px] tracking-[0.28em] text-white/30 hover:text-red-300/90"
+              >
+                ERASE
+              </button>
+            </div>
           );
         })}
       </div>
@@ -180,6 +238,40 @@ function SlotsView({
       >
         BACK
       </button>
+    </div>
+  );
+}
+
+function EraseConfirm({
+  name,
+  onKeep,
+  onErase,
+}: {
+  name: string;
+  onKeep: () => void;
+  onErase: () => void;
+}): JSX.Element {
+  return (
+    <div className="flex h-full flex-col">
+      <p className="font-pixel text-[9px] tracking-[0.28em] text-red-300/80">ERASE</p>
+      <p className="mt-2 truncate font-pixel text-[12px] tracking-wide text-amber-50">{name}</p>
+      <p className="mt-1 font-pixel text-[8px] leading-relaxed text-white/40">this file will be gone</p>
+      <div className="mt-auto flex flex-col gap-1.5 pt-3">
+        <button
+          type="button"
+          onClick={onErase}
+          className="border border-red-400/45 bg-black/40 px-3 py-2 font-pixel text-[10px] tracking-[0.2em] text-red-200 hover:border-red-300/70 hover:bg-red-400/10"
+        >
+          ERASE
+        </button>
+        <button
+          type="button"
+          onClick={onKeep}
+          className="border border-white/15 bg-black/25 px-3 py-2 font-pixel text-[10px] tracking-[0.2em] text-amber-100/70 hover:border-amber-200/40"
+        >
+          KEEP
+        </button>
+      </div>
     </div>
   );
 }
