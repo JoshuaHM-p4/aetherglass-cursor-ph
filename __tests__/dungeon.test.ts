@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_FACINGS, EXIT_TILE, FOUNTAIN_ROOM_ID, exitDirAt, exitMouthCells, isExitTile } from '../lib/dungeon/const';
-import { keyInvariantHolds } from '../lib/dungeon/generate';
+import {
+  ALL_FACINGS,
+  CRAB_ID,
+  EXIT_TILE,
+  FOUNTAIN_ROOM_ID,
+  GHOST_ID,
+  MASTER_ROOM_ID,
+  exitDirAt,
+  exitMouthCells,
+  isExitTile,
+} from '../lib/dungeon/const';
+import {
+  applyDebugDungeonIfNamed,
+  isDebugPlayerName,
+  keyInvariantHolds,
+} from '../lib/dungeon/generate';
 import { applyAction, initialState } from '../lib/sim/reducer';
+import { ITEM_IDS } from '../lib/sim/registry';
 import type { Facing, GameState } from '../lib/sim/types';
 import { isPaneInteractable, pickAdjacentEntity } from '../game/systems/interactTarget';
 
@@ -261,5 +276,73 @@ describe('dungeon generation', () => {
       if (found) break;
     }
     expect(found).toBe(true);
+  });
+
+  it('treats Papes as the debug scavenger name', () => {
+    expect(isDebugPlayerName('Papes')).toBe(true);
+    expect(isDebugPlayerName(' papes ')).toBe(true);
+    expect(isDebugPlayerName('wanderer')).toBe(false);
+  });
+
+  it('stamps a fountain-plus-three-caves-plus-boss gauntlet for Papes', () => {
+    const state = initialState(1);
+    state.player.name = 'Papes';
+    applyDebugDungeonIfNamed(state);
+
+    const kinds = Object.values(state.dungeon.rooms).map((room) => room.kind).sort();
+    expect(kinds).toEqual(['cave', 'cave', 'cave', 'fountain', 'master']);
+    expect(state.dungeon.caveCount).toBe(3);
+    expect(state.dungeon.rooms[FOUNTAIN_ROOM_ID]?.exits.up?.to).toBe('r_0_-1');
+    expect(state.dungeon.rooms['r_0_-1']?.exits.up?.to).toBe('r_0_-2');
+    expect(state.dungeon.rooms['r_0_-2']?.exits.up).toMatchObject({ to: 'r_0_-3', lock: 'key' });
+    expect(state.dungeon.rooms['r_0_-3']?.exits.up).toMatchObject({ to: MASTER_ROOM_ID, lock: 'master' });
+    expect(state.dungeon.masterDoorRoomId).toBe('r_0_-3');
+    expect(state.dungeon.masterKeyPlaced).toBe(true);
+    expect(state.entities[CRAB_ID]?.roomId).toBe(MASTER_ROOM_ID);
+    expect(state.entities[GHOST_ID]?.roomId).toBe('r_0_-1');
+    expect(keyInvariantHolds(state)).toBe(true);
+
+    const foes = Object.values(state.entities).filter((e) => e.kind === 'enemy' || e.kind === 'elite');
+    expect(foes.every((e) => e.roomId !== FOUNTAIN_ROOM_ID)).toBe(true);
+    const foeTags = new Set(foes.flatMap((e) => e.tags));
+    for (const tag of ['slime', 'spider', 'rat', 'ghost', 'bat', 'cyclops', 'crab']) {
+      expect(foeTags.has(tag), tag).toBe(true);
+    }
+    expect(foes.filter((e) => e.tags.includes('bat'))).toHaveLength(3);
+
+    const objects = Object.values(state.entities);
+    expect(objects.some((e) => e.kind === 'shrine')).toBe(true);
+    expect(objects.some((e) => e.kind === 'door' && e.tags.includes('key'))).toBe(true);
+    expect(objects.some((e) => e.kind === 'door' && e.tags.includes('master_lock'))).toBe(true);
+    expect(objects.some((e) => e.kind === 'container' && e.tags.includes('wood'))).toBe(true);
+    expect(objects.some((e) => e.kind === 'container' && e.tags.includes('stone'))).toBe(true);
+    expect(objects.some((e) => e.kind === 'container' && e.tags.includes('sealed'))).toBe(true);
+    expect(objects.some((e) => e.tags.includes('pickup'))).toBe(true);
+    expect(objects.some((e) => e.tags.includes('fountain'))).toBe(true);
+
+    const loot = new Set<string>();
+    for (const entity of objects) {
+      for (const id of entity.contents ?? []) loot.add(id);
+    }
+    expect([...ITEM_IDS].filter((id) => !loot.has(id))).toEqual([]);
+
+    const behindKey = new Set(['r_0_-3', MASTER_ROOM_ID]);
+    const keyHomes = objects.filter((e) => e.contents?.includes('key')).map((e) => e.roomId);
+    expect(keyHomes.every((id) => !behindKey.has(id))).toBe(true);
+    const masterKeyHomes = objects.filter((e) => e.contents?.includes('master_key')).map((e) => e.roomId);
+    expect(masterKeyHomes.every((id) => id !== MASTER_ROOM_ID)).toBe(true);
+
+    const stepped = enter(state, 'up');
+    expect(stepped.ok).toBe(true);
+    expect(stepped.state.player.roomId).toBe('r_0_-1');
+    expect(stepped.state.dungeon.caveCount).toBe(3);
+    expect(Object.keys(stepped.state.dungeon.rooms)).toHaveLength(5);
+  });
+
+  it('does not stamp the gauntlet for a normal name', () => {
+    const state = initialState(1);
+    state.player.name = 'wanderer';
+    applyDebugDungeonIfNamed(state);
+    expect(Object.keys(state.dungeon.rooms)).toEqual([FOUNTAIN_ROOM_ID]);
   });
 });

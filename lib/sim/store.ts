@@ -29,6 +29,7 @@
 import { createStore } from 'zustand/vanilla';
 import { bus } from '../../game/EventBus';
 import { writeSave } from '../client/save';
+import { applyDebugDungeonIfNamed } from '../dungeon/generate';
 import { applyKit } from './kits';
 import { applyAction, initialState } from './reducer';
 import { check } from './rules';
@@ -169,6 +170,7 @@ export const gameStore = createStore<GameStore>((set, get) => {
       fresh.player.name = name;
       fresh.player.appearance = appearance;
       applyKit(fresh, appearance);
+      applyDebugDungeonIfNamed(fresh);
       get().hydrate(fresh);
     },
     setInteractTarget(entityId) {

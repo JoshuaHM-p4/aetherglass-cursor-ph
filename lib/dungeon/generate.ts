@@ -32,6 +32,7 @@ import type {
   PassageLock,
   Room,
 } from '../sim/types';
+import { ITEM_IDS } from '../sim/registry';
 
 const INTERIOR_LO = 2;
 const INTERIOR_HI = ROOM_SIZE - 3;
@@ -642,6 +643,233 @@ export function bootFountain(seed: number): {
     entities,
     player: { roomId: FOUNTAIN_ROOM_ID, tx: FOUNTAIN_SPAWN.tx, ty: FOUNTAIN_SPAWN.ty },
   };
+}
+
+/** New Game name that stamps the showcase gauntlet instead of a random cave. */
+export const DEBUG_PLAYER_NAME = 'Papes';
+
+export function isDebugPlayerName(name: string): boolean {
+  return name.trim().toLowerCase() === DEBUG_PLAYER_NAME.toLowerCase();
+}
+
+function makeCave(state: GameState, gx: number, gy: number): Room {
+  const id = roomIdAt(gx, gy);
+  const room: Room = { id, kind: 'cave', gx, gy, exits: emptyExits() };
+  state.dungeon.rooms[id] = room;
+  state.dungeon.caveCount += 1;
+  return room;
+}
+
+function linkOpen(a: Room, aDir: Facing, b: Room): void {
+  a.exits[aDir] = openPassage(b.id, 'open');
+  b.exits[OPPOSITE[aDir]] = openPassage(a.id, 'open');
+}
+
+function put(state: GameState, used: Set<string>, entity: Entity): void {
+  used.add(`${entity.tx},${entity.ty}`);
+  state.entities[entity.id] = entity;
+}
+
+function chestAt(
+  state: GameState,
+  used: Set<string>,
+  roomId: string,
+  tx: number,
+  ty: number,
+  contents: string[],
+  wood: boolean,
+  extra?: Partial<Pick<Entity, 'name' | 'tags' | 'locked' | 'seed' | 'paneWorthy'>>,
+): Entity {
+  const n = Object.values(state.entities).filter((e) => e.kind === 'container' && e.roomId === roomId).length;
+  const entity: Entity = {
+    id: `chest_${roomId}_${n}`,
+    kind: 'container',
+    name: extra?.name ?? (wood ? 'splintered crate' : 'stone chest'),
+    tags: extra?.tags ?? (wood ? ['wood'] : ['stone']),
+    state: 'idle',
+    tx,
+    ty,
+    roomId,
+    contents,
+    paneWorthy: extra?.paneWorthy ?? true,
+    locked: extra?.locked,
+    seed: extra?.seed ?? (wood ? 'the slats remember a cellar' : 'cold iron bands'),
+  };
+  put(state, used, entity);
+  return entity;
+}
+
+function placedItemIds(state: GameState): Set<string> {
+  const ids = new Set<string>();
+  for (const entity of Object.values(state.entities)) {
+    for (const id of entity.contents ?? []) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * Fountain, three caves (every foe, container, door, shrine, and item), then the crab.
+ * Call after `initialState` when the scavenger is named Papes. Does not grant into the bag.
+ */
+export function applyDebugDungeon(state: GameState): void {
+  if (state.dungeon.rooms[MASTER_ROOM_ID]) return;
+
+  const fountain = state.dungeon.rooms[FOUNTAIN_ROOM_ID];
+  if (!fountain) return;
+
+  const a = makeCave(state, 0, -1);
+  const b = makeCave(state, 0, -2);
+  const c = makeCave(state, 0, -3);
+
+  linkOpen(fountain, 'up', a);
+  linkOpen(a, 'up', b);
+
+  b.exits.up = openPassage(c.id, 'key');
+  placeDoor(state, b, 'up', 'key');
+  c.exits.down = openPassage(b.id, 'open');
+  state.dungeon.lockedDoorCount += 1;
+  state.dungeon.keysPlaced += 1;
+
+  c.exits.up = openPassage(null, 'master');
+  placeDoor(state, c, 'up', 'master');
+  state.dungeon.masterDoorRoomId = c.id;
+  const master = generateMasterRoom(state, c.id, 'down');
+  c.exits.up!.to = master.id;
+
+  const usedA = occupiedTiles(state, a.id);
+  put(state, usedA, {
+    id: `slime_${a.id}_0`,
+    kind: 'enemy',
+    name: 'cave slime',
+    tags: ['slime', 'foul'],
+    state: 'idle',
+    tx: 3,
+    ty: 3,
+    roomId: a.id,
+    hp: 3,
+    hpMax: 3,
+  });
+  put(state, usedA, {
+    id: `spider_${a.id}_0`,
+    kind: 'enemy',
+    name: 'ceiling spider',
+    tags: ['spider'],
+    state: 'idle',
+    tx: 8,
+    ty: 3,
+    roomId: a.id,
+    hp: 2,
+    hpMax: 2,
+    seed: 'the floor-stain is not a stain',
+  });
+  put(state, usedA, {
+    id: `rat_${a.id}_0`,
+    kind: 'enemy',
+    name: 'cave rat',
+    tags: ['rat', 'passive', 'drops'],
+    state: 'idle',
+    tx: 3,
+    ty: 8,
+    roomId: a.id,
+    hp: 1,
+    hpMax: 1,
+  });
+  put(state, usedA, {
+    id: GHOST_ID,
+    kind: 'enemy',
+    name: 'pale ghost',
+    tags: ['ghost', 'ethereal'],
+    state: 'idle',
+    tx: 8,
+    ty: 8,
+    roomId: a.id,
+    hp: 4,
+    hpMax: 4,
+    paneWorthy: true,
+    seed: 'it does not respect the walls',
+  });
+  state.dungeon.ghostId = GHOST_ID;
+  chestAt(state, usedA, a.id, 3, 5, [
+    'wooden_sword',
+    'sword_short',
+    'saber',
+    'knife',
+    'hammer',
+    'axe',
+    'staff',
+    'pole',
+    'shield_wood',
+    'shield_iron',
+    'crowbar',
+  ], true);
+  chestAt(state, usedA, a.id, 8, 5, [
+    'potion_dim',
+    'potion_red',
+    'potion_blue',
+    'potion_green',
+    'mushroom_foul',
+    'key',
+    'key_brass',
+  ], false);
+
+  const usedB = occupiedTiles(state, b.id);
+  for (let i = 0; i < 3; i++) {
+    put(state, usedB, {
+      id: `bat_${b.id}_${i}`,
+      kind: 'enemy',
+      name: 'cave bat',
+      tags: ['bat', 'ethereal'],
+      state: 'idle',
+      tx: 3 + i,
+      ty: 3,
+      roomId: b.id,
+      hp: 2,
+      hpMax: 2,
+    });
+  }
+  put(state, usedB, {
+    id: `shrine_${b.id}`,
+    kind: 'shrine',
+    name: 'stone shrine',
+    tags: ['arcane', 'shrine'],
+    state: 'idle',
+    tx: 8,
+    ty: 3,
+    roomId: b.id,
+    paneWorthy: true,
+    seed: 'it is quiet on purpose',
+  });
+  chestAt(state, usedB, b.id, 8, 8, ['pane_shard'], false, {
+    name: 'rusted lockbox',
+    tags: ['sealed', 'iron'],
+    locked: true,
+    paneWorthy: true,
+    seed: 'a cold draft comes from the seam',
+  });
+  chestAt(state, usedB, b.id, 5, 8, ['ore_iron', 'torch_stub', 'master_key'], true);
+  state.dungeon.masterKeyPlaced = true;
+  const lootN = Object.values(state.entities).filter((e) => e.tags.includes('pickup') && e.roomId === b.id).length;
+  put(state, usedB, {
+    id: `loot_${b.id}_${lootN}`,
+    kind: 'container',
+    name: 'heart container',
+    tags: ['pickup', 'heart_container'],
+    state: 'idle',
+    tx: 3,
+    ty: 8,
+    roomId: b.id,
+    contents: ['heart_container'],
+    paneWorthy: false,
+  });
+
+  const usedC = occupiedTiles(state, c.id);
+  addCyclops(state, c.id, 'up', usedC);
+  const missing = ITEM_IDS.filter((id) => !placedItemIds(state).has(id));
+  if (missing.length) chestAt(state, usedC, c.id, 3, 5, missing, false);
+}
+
+export function applyDebugDungeonIfNamed(state: GameState): void {
+  if (isDebugPlayerName(state.player.name)) applyDebugDungeon(state);
 }
 
 /** Unspent keys in bag + unopened contents vs remaining keyed passages. */

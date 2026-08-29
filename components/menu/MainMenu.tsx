@@ -14,6 +14,7 @@ import {
   subscribeSaves,
   type SlotIndex,
 } from '../../lib/client/save';
+import { applyDebugDungeonIfNamed } from '../../lib/dungeon/generate';
 import { APPEARANCES, appearanceTileSrc, DEFAULT_APPEARANCE, type AppearanceId } from '../../lib/sim/appearances';
 import { applyKit, kitLine } from '../../lib/sim/kits';
 import { initialState } from '../../lib/sim/reducer';
@@ -444,6 +445,7 @@ function beginNewGame(index: SlotIndex, name: string, appearance: AppearanceId):
   state.player.name = name;
   state.player.appearance = appearance;
   applyKit(state, appearance);
+  applyDebugDungeonIfNamed(state);
   setActiveSlot(index);
   gameStore.getState().hydrate(state);
   setPlaying(true);
