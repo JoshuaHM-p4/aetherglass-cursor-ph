@@ -15,7 +15,7 @@ import {
   type PaneStatus,
 } from '../../lib/client/useOracleTurn';
 import { bus } from '../../game/EventBus';
-import { playFileSfx } from '../../game/systems/fileSfx';
+import { playChatBlip, playFileSfx, playTypeClick } from '../../game/systems/fileSfx';
 import { setPaneTyping } from '../../game/inputCapture';
 import { requestSessionDismiss } from '../../lib/client/paneSessions';
 import { paneBoxBesidePlayer, readPlayerAnchor } from '../../game/playerAnchor';
@@ -23,6 +23,9 @@ import { useGame } from '../useGame';
 import ChoiceRack from './ChoiceRack';
 
 type PanePage = { player: PaneMessage | null; pane: PaneMessage | null };
+
+/** Message ids that already chattered, so page-flips and post-stream ink-bleed stay quiet. */
+const voicedIds = new Set<string>();
 
 function paginate(messages: readonly PaneMessage[]): PanePage[] {
   const pages: PanePage[] = [];
@@ -93,13 +96,18 @@ export default function Pane(): JSX.Element {
     if (!activeEntityId) return;
     const onEsc = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      if (introBeat !== null) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       event.preventDefault();
       if (event.target instanceof HTMLElement) event.target.blur();
       requestSessionDismiss();
     };
     window.addEventListener('keydown', onEsc, true);
     return () => window.removeEventListener('keydown', onEsc, true);
-  }, [activeEntityId]);
+  }, [activeEntityId, introBeat]);
 
   useEffect(() => {
     if (!activeEntityId) return;
@@ -167,8 +175,10 @@ export default function Pane(): JSX.Element {
                     streaming={status === 'streaming' && current.pane.id === lastId}
                   />
                 )}
+                {thinking && onLatest && !current.pane && <ThinkingMark />}
               </div>
             )}
+            {thinking && !current && <ThinkingMark />}
           </div>
           {pages.length > 1 && (
             <ol
@@ -245,17 +255,79 @@ export function Glass(props: {
       style={{ boxShadow: '0 18px 50px rgba(0,0,0,0.45), inset 0 1px 0 rgba(201,168,106,0.18)' }}
     >
       <CrackOverlay opacity={crack} />
-      <header className="mb-3 flex items-baseline justify-between gap-2">
+      <header className="mb-3 flex items-center justify-between gap-2">
         <span className="font-pixel text-[9px] tracking-[0.28em] text-amber-200/70">
           AETHERGLASS
           {props.subject ? (
             <span className="ml-2 tracking-normal text-amber-100/55">· {props.subject}</span>
           ) : null}
         </span>
-        <span className="font-pixel text-[8px] text-white/35">{props.integrity}%</span>
+        <span className="flex items-center gap-1.5">
+          {props.status === 'thinking' ? <ThinkingPips compact /> : null}
+          <span className="font-pixel text-[8px] text-white/35">{props.integrity}%</span>
+        </span>
       </header>
       {props.children}
     </motion.aside>
+  );
+}
+
+function ThinkingPips({ compact = false }: { compact?: boolean }): JSX.Element {
+  const reduced = useReducedMotion();
+  return (
+    <span className={`flex ${compact ? 'gap-[2px]' : 'gap-[3px]'}`} aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className={`block ${compact ? 'h-[3px] w-[3px]' : 'h-[4px] w-[4px]'} bg-amber-200`}
+          animate={reduced ? { opacity: 0.55 } : { opacity: [0.18, 1, 0.18] }}
+          transition={
+            reduced
+              ? undefined
+              : { duration: 0.84, repeat: Infinity, delay: i * 0.16, ease: 'easeInOut' }
+          }
+        />
+      ))}
+    </span>
+  );
+}
+
+function ThinkingMark(): JSX.Element {
+  const reduced = useReducedMotion();
+  return (
+    <div
+      className="flex items-center gap-2 px-0.5 py-1"
+      role="status"
+      aria-live="polite"
+      aria-label="the glass is thinking"
+    >
+      <motion.span
+        className="inline-flex"
+        animate={
+          reduced
+            ? { opacity: [0.45, 1, 0.45] }
+            : { rotate: [0, 0, 90, 90, 180, 180, 270, 270, 360], opacity: [0.65, 1, 0.65] }
+        }
+        transition={
+          reduced
+            ? { duration: 1.4, repeat: Infinity, ease: 'easeInOut' }
+            : { duration: 2.4, repeat: Infinity, ease: 'linear', times: [0, 0.18, 0.25, 0.43, 0.5, 0.68, 0.75, 0.93, 1] }
+        }
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          aria-hidden
+          style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges' }}
+        >
+          <path fill="#6aa8c4" d="M6 1h2v1h1v1h1v1h1v2h1v2H11v2h-1v1H9v1H7v1H5v-1H4v-1H3v-1H2V8H1V6h1V4h1V3h1V2h1V1h1z" />
+          <path fill="#d7f4ff" d="M6 3h2v1h1v2H8v3H6V7H5V4h1z" />
+          <path fill="#9ad4e8" d="M7 2h1v1h1v1h1v2H9v1H7V5H6V3h1z" />
+        </svg>
+      </motion.span>
+      <ThinkingPips />
+    </div>
   );
 }
 
@@ -299,9 +371,12 @@ export function PaneMessageView(
     );
   }
 
+  const streaming = Boolean(props.streaming);
+
   return (
     <div className="space-y-2.5 px-0.5">
-      {props.streaming ? (
+      <ChatVoice id={props.id} text={props.text} streaming={streaming} />
+      {streaming ? (
         <div className="space-y-2.5">
           {stanzas.map((stanza, i) => (
             <p key={i} className="text-justify font-pixel text-[11px] leading-[1.65] text-amber-50/90">
@@ -313,7 +388,9 @@ export function PaneMessageView(
           ))}
         </div>
       ) : (
-        stanzas.map((stanza, i) => <InkBleed key={i} text={stanza} />)
+        stanzas.map((stanza, i) => (
+          <InkBleed key={i} id={`${props.id}-${i}`} text={stanza} voice={!voicedIds.has(props.id)} />
+        ))
       )}
       {props.refusals.length > 0 && (
         <ul className="space-y-0.5">
@@ -331,9 +408,54 @@ export function PaneMessageView(
   );
 }
 
-function InkBleed({ text }: { text: string }) {
+function ChatVoice({
+  id,
+  text,
+  streaming,
+}: {
+  id: string;
+  text: string;
+  streaming: boolean;
+}): null {
+  const prev = useRef('');
+  useEffect(() => {
+    if (!streaming) {
+      prev.current = text;
+      return;
+    }
+    voicedIds.add(id);
+    const added = text.slice(prev.current.length);
+    prev.current = text;
+    if (added.replace(/\s+/g, '').length === 0) return;
+    playChatBlip();
+  }, [id, text, streaming]);
+  return null;
+}
+
+function InkBleed({ id, text, voice }: { id: string; text: string; voice: boolean }) {
   const reduced = useReducedMotion();
   const words = text.length === 0 ? [] : text.split(/(\s+)/);
+
+  useEffect(() => {
+    if (!voice) return;
+    if (voicedIds.has(id)) return;
+    voicedIds.add(id);
+    if (reduced) {
+      playChatBlip();
+      return;
+    }
+    const timers: number[] = [];
+    const tokens = text.split(/(\s+)/);
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i]!.trim() === '') continue;
+      const delay = Math.min(i * 24, 1100);
+      timers.push(window.setTimeout(() => playChatBlip(), delay));
+    }
+    return () => {
+      for (const t of timers) window.clearTimeout(t);
+    };
+  }, [id, text, voice, reduced]);
+
   if (reduced) {
     return <p className="text-justify font-pixel text-[11px] leading-[1.65] text-amber-50/90">{text}</p>;
   }
@@ -378,6 +500,10 @@ function PaneInput({
   const keepKeys = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') return;
     event.stopPropagation();
+    if (event.type !== 'keydown') return;
+    if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === 'Enter' || event.key === 'Tab') return;
+    if (event.key.length === 1 || event.key === 'Backspace') playTypeClick();
   };
 
   return (

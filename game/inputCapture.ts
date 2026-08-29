@@ -9,6 +9,8 @@ let settingsOpen = false;
 let hotbarSlot = 0;
 /** True while the glass is holding the keyboard (focused speak field or thinking). */
 let paneTyping = false;
+/** True during the scripted wake. Movement, bag, settings, and Escape cannot cut it short. */
+let introLocked = false;
 
 export function setBagOpen(open: boolean): void {
   bagOpen = open;
@@ -20,6 +22,14 @@ export function setSettingsOpen(open: boolean): void {
 
 export function setPaneTyping(on: boolean): void {
   paneTyping = on;
+}
+
+export function setIntroLocked(on: boolean): void {
+  introLocked = on;
+}
+
+export function isIntroLocked(): boolean {
+  return introLocked;
 }
 
 export function isBagOpen(): boolean {
@@ -54,7 +64,7 @@ export function isWorldInputBlocked(): boolean {
   if (!isPlaying()) return true;
   if (roomWiping) return true;
   if (world().player.hp <= 0) return true;
-  if (bagOpen || settingsOpen || paneTyping) return true;
+  if (introLocked || bagOpen || settingsOpen || paneTyping) return true;
   if (typeof document === 'undefined') return false;
   const el = document.activeElement;
   if (!(el instanceof HTMLElement)) return false;

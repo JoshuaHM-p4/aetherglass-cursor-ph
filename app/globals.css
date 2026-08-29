@@ -74,6 +74,10 @@ main {
   }
 }
 
+.pane-thinking {
+  animation: pane-breathe 2.2s ease-in-out infinite;
+}
+
 .ag-slider {
   -webkit-appearance: none;
   appearance: none;

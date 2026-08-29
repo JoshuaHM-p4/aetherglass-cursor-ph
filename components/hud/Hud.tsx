@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { bus } from '../../game/EventBus';
 import { setPlaying } from '../../lib/client/play';
-import { cycleHotbar, getHotbarSlot, setBagOpen, setHotbarSlot, setSettingsOpen } from '../../game/inputCapture';
+import { cycleHotbar, getHotbarSlot, isIntroLocked, setBagOpen, setHotbarSlot, setSettingsOpen } from '../../game/inputCapture';
 import { playFileSfx, preloadFileSfx } from '../../game/systems/fileSfx';
 import { readGame, useGame } from '../useGame';
 import BagGrid from './BagGrid';
@@ -95,6 +95,7 @@ export default function Hud(): JSX.Element {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.repeat) return;
+      if (isIntroLocked()) return;
       const typing =
         event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
       if (event.key === 'F3') {
@@ -190,7 +191,13 @@ export default function Hud(): JSX.Element {
       <InteractHint />
       <Minimap />
       <div className="pointer-events-auto absolute top-5 right-5 z-30 flex flex-col gap-1.5" data-hud>
-        <SettingsButton open={settingsOpen} onClick={() => toggleSettings(!settingsOpen)} />
+        <SettingsButton
+          open={settingsOpen}
+          onClick={() => {
+            if (isIntroLocked()) return;
+            toggleSettings(!settingsOpen);
+          }}
+        />
       </div>
       <div className="pointer-events-auto absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 flex-col items-start gap-1.5" data-hud>
         <Hearts />
@@ -198,6 +205,7 @@ export default function Hud(): JSX.Element {
           <Hotbar
             active={slot}
             onSelect={(i) => {
+              if (isIntroLocked()) return;
               if (heldIndex !== null) stashInSlot(i);
               else pickSlot(i);
             }}
@@ -212,6 +220,7 @@ export default function Hud(): JSX.Element {
             type="button"
             title="bag (tab)"
             onClick={(event) => {
+              if (isIntroLocked()) return;
               toggleBag(!bagOpen);
               event.currentTarget.blur();
             }}

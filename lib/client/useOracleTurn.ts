@@ -8,7 +8,7 @@ import { useChat } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { bus } from '../../game/EventBus';
-import { setPaneTyping } from '../../game/inputCapture';
+import { setIntroLocked, setPaneTyping } from '../../game/inputCapture';
 import { emptyJournal, isTurnCommitted, record, type PaneJournal } from '../oracle/journal';
 import type { ChoicesData, FocusData, OfferedChoice, TurnId, Verdict } from '../oracle/protocol';
 import { verdictKey } from '../oracle/protocol';
@@ -55,7 +55,7 @@ export interface OracleTurnApi {
   choose(choiceId: string): void;
   look(entityId: string): void;
   retry(): void;
-  /** Scripted fountain wake; Enter advances. Null when the live oracle is in charge. */
+  /** Scripted fountain wake; Enter advances, cannot skip. Null when the live oracle is in charge. */
   introBeat: number | null;
 }
 
@@ -258,6 +258,11 @@ export function useOracleTurn(): OracleTurnApi {
     if (!entity) return;
 
     if (!world().flags.intro_done && entityId === INTRO_ENTITY_ID) {
+      if (introBeatRef.current !== null) {
+        bus.emit('pane:awake', { open: true, reason: 'interact' });
+        bus.emit('pane:focus', { entityId, style: 'spotlight' });
+        return;
+      }
       parkCurrent();
       setActiveSessionId(entityId);
       setActiveEntity(entityId);
@@ -267,6 +272,7 @@ export function useOracleTurn(): OracleTurnApi {
       setMessagesRef.current([]);
       setIntroBeat(0);
       setPaneTyping(true);
+      setIntroLocked(true);
       bus.emit('pane:awake', { open: true, reason: 'interact' });
       bus.emit('pane:focus', { entityId, style: 'spotlight' });
       bus.emit('pane:intro', { cue: 'hey' });
@@ -321,26 +327,45 @@ export function useOracleTurn(): OracleTurnApi {
   useEffect(() => bus.on('world:interact', ({ entityId }) => lookRef.current(entityId)), []);
 
   useEffect(() => {
-    return bus.on('world:ready', () => {
-      if (!world().flags.intro_done) lookRef.current(INTRO_ENTITY_ID);
+    const tryIntro = () => {
+      if (introBeatRef.current !== null) return;
+      if (world().flags.intro_done) return;
+      lookRef.current(INTRO_ENTITY_ID);
+    };
+    tryIntro();
+    const offReady = bus.on('world:ready', tryIntro);
+    const offPlaying = bus.on('menu:playing', ({ playing }) => {
+      if (playing) tryIntro();
     });
+    return () => {
+      offReady();
+      offPlaying();
+      setIntroLocked(false);
+    };
   }, []);
 
   useEffect(() => {
     if (introBeat === null) return;
     setPaneTyping(true);
+    setIntroLocked(true);
     const finish = () => {
       gameStore.getState().dispatch({ type: 'SET_FLAG', flag: 'intro_done', value: true }, 'keyboard');
       setIntroBeat(null);
       setPaneTyping(false);
       bus.emit('pane:intro', { cue: 'done' });
       requestSessionDismiss();
+      queueMicrotask(() => setIntroLocked(false));
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Enter' && event.key !== 'Escape') return;
+      if (event.key === 'Escape' || event.key === 'Tab') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (event.key !== 'Enter') return;
       event.preventDefault();
-      event.stopPropagation();
-      if (event.key === 'Escape' || introBeat + 1 >= INTRO_BEATS.length) {
+      event.stopImmediatePropagation();
+      if (introBeat + 1 >= INTRO_BEATS.length) {
         finish();
         return;
       }
@@ -352,6 +377,7 @@ export function useOracleTurn(): OracleTurnApi {
 
   useEffect(() => {
     setSessionDismissHandler(() => {
+      if (introBeatRef.current !== null) return;
       const id = getActiveSessionId();
       if (!id) return;
       putSession(capture(id));

@@ -77,7 +77,9 @@ async function decodeAll(ac: AudioContext): Promise<void> {
 
 export function preloadFileSfx(): void {
   const ac = audioCtx();
-  if (!ac || loading) return;
+  if (!ac) return;
+  bakeVoice(ac);
+  if (loading) return;
   loading = decodeAll(ac);
 }
 
@@ -110,4 +112,78 @@ export function playFileSfx(id: FileSfxId, mix = MIX[id]): void {
   }
   playHtml(FILE_SFX[id], volume);
   preloadFileSfx();
+}
+
+/** Undertale-style glass chatter and the speak-field key click. Baked, not files. */
+type VoiceId = 'chat' | 'type';
+
+const VOICE_MIX: Record<VoiceId, number> = { chat: 0.4, type: 0.32 };
+const voiceBuffers = new Map<VoiceId, AudioBuffer>();
+let lastChatAt = 0;
+let lastTypeAt = 0;
+
+function bakeSamples(ac: AudioContext, seconds: number, fn: (t: number) => number): AudioBuffer {
+  const n = Math.max(1, Math.floor(seconds * ac.sampleRate));
+  const buf = ac.createBuffer(1, n, ac.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) {
+    const s = fn(i / ac.sampleRate);
+    data[i] = s < -1 ? -1 : s > 1 ? 1 : s;
+  }
+  return buf;
+}
+
+function bakeVoice(ac: AudioContext): void {
+  if (!voiceBuffers.has('chat')) {
+    voiceBuffers.set(
+      'chat',
+      bakeSamples(ac, 0.05, (t) => {
+        const e = Math.exp(-t * 64);
+        const sq = Math.sin(2 * Math.PI * 980 * t) >= 0 ? 0.55 : -0.55;
+        const harm = Math.sin(2 * Math.PI * 1470 * t) * 0.22;
+        return (sq + harm) * e;
+      }),
+    );
+  }
+  if (!voiceBuffers.has('type')) {
+    voiceBuffers.set(
+      'type',
+      bakeSamples(ac, 0.024, (t) => {
+        const e = Math.exp(-t * 130);
+        return (Math.sin(2 * Math.PI * 3100 * t) * 0.42 + Math.sin(2 * Math.PI * 880 * t) * 0.18) * e;
+      }),
+    );
+  }
+}
+
+function playVoice(id: VoiceId, rate: number): void {
+  const ac = audioCtx();
+  if (!ac) return;
+  bakeVoice(ac);
+  const buf = voiceBuffers.get(id);
+  if (!buf || ac.state !== 'running') return;
+  const src = ac.createBufferSource();
+  const gain = ac.createGain();
+  gain.gain.value = mixVolume(VOICE_MIX[id]);
+  src.buffer = buf;
+  src.playbackRate.value = rate;
+  src.connect(gain);
+  gain.connect(ac.destination);
+  src.start();
+}
+
+/** High square blip as the glass talks. Throttled so a sentence is a stream, not a chord. */
+export function playChatBlip(): void {
+  const now = typeof performance === 'undefined' ? Date.now() : performance.now();
+  if (now - lastChatAt < 44) return;
+  lastChatAt = now;
+  playVoice('chat', 0.93 + Math.random() * 0.16);
+}
+
+/** Short tick when the player types into the pane. */
+export function playTypeClick(): void {
+  const now = typeof performance === 'undefined' ? Date.now() : performance.now();
+  if (now - lastTypeAt < 26) return;
+  lastTypeAt = now;
+  playVoice('type', 0.9 + Math.random() * 0.18);
 }
