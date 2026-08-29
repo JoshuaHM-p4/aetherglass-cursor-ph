@@ -4,6 +4,7 @@
 // already draws. Grey-box bake is the fallback if a file is missing.
 
 import Phaser from 'phaser';
+import { ensureLookWalk, preloadLooks } from '../systems/playerLook';
 
 const TILE = '/assets/tiles/tiny-dungeon';
 
@@ -178,45 +179,6 @@ function bakeGlow(scene: Phaser.Scene): void {
   g.destroy();
 }
 
-/** Tiny Dungeon has no walk cycle — stride by bobbing the body and swapping feet. */
-function stampWalkFrame(
-  scene: Phaser.Scene,
-  src: string,
-  dest: string,
-  bodyDy: number,
-  legDx: number,
-): void {
-  const canvas = scene.textures.createCanvas(dest, 16, 16);
-  if (!canvas) return;
-  const ctx = canvas.context;
-  ctx.imageSmoothingEnabled = false;
-  const img = scene.textures.get(src).getSourceImage() as CanvasImageSource;
-  const torso = 10;
-  ctx.drawImage(img, 0, 0, 16, torso, 0, bodyDy, 16, torso);
-  ctx.drawImage(img, 0, torso, 16, 16 - torso, legDx, torso + bodyDy, 16, 16 - torso);
-  canvas.refresh();
-}
-
-function installPlayerWalk(scene: Phaser.Scene): void {
-  if (!scene.textures.exists('tex-player')) return;
-  stampWalkFrame(scene, 'tex-player', 'tex-player-step-l', 1, -1);
-  stampWalkFrame(scene, 'tex-player', 'tex-player-step-r', 1, 1);
-  if (!scene.textures.exists('tex-player-step-l') || !scene.textures.exists('tex-player-step-r')) {
-    return;
-  }
-  scene.anims.create({
-    key: 'player-walk',
-    frames: [
-      { key: 'tex-player' },
-      { key: 'tex-player-step-l' },
-      { key: 'tex-player' },
-      { key: 'tex-player-step-r' },
-    ],
-    frameRate: 10,
-    repeat: -1,
-  });
-}
-
 export class Preload extends Phaser.Scene {
   constructor() {
     super('Preload');
@@ -233,6 +195,7 @@ export class Preload extends Phaser.Scene {
     this.load.image('tex-wall-nw', tile(1));
     this.load.image('tex-wall-ne', tile(3));
     this.load.image('tex-player', tile(85));
+    preloadLooks(this);
     this.load.image('tex-slime', tile(108));
     this.load.image('tex-chest', tile(89));
     this.load.image('tex-chest-open', tile(90));
@@ -261,7 +224,7 @@ export class Preload extends Phaser.Scene {
     if (!bakeKeyed(this, 'tex-item-sword', 'tex-sword')) bakeFallbackSword(this);
     bakeSlash(this);
     bakeSpark(this);
-    installPlayerWalk(this);
+    ensureLookWalk(this, 'wanderer');
     this.scene.start('Overworld');
   }
 }

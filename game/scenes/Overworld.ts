@@ -14,18 +14,25 @@ import {
 import type { Entity, Facing, GameState, Room } from '../../lib/sim/types';
 import { gameStore, world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
-import { PLAYER_BODY, TILE, WALL_BODY } from '../const';
+import { ACTOR_BODY, PROP_BODY, TILE, WALL_BODY } from '../const';
 import { isWorldInputBlocked, setRoomWiping } from '../inputCapture';
+import { isPlaying } from '../../lib/client/play';
 import { requestSessionDismiss } from '../../lib/client/paneSessions';
 import { setPlayerAnchor, worldToOverlay } from '../playerAnchor';
 import { DEAD_TINT, installCombatSystem } from '../systems/combat';
+import { endKnockback, tickKnockback } from '../systems/knockback';
+import { installHpBars } from '../systems/hpBar';
 import { installFocusSystem } from '../systems/focus';
 import { attachProximityRings, installProximitySystem } from '../systems/proximity';
 import { installSessionMarks } from '../systems/sessionMark';
 import { plantRoomFade } from '../systems/roomFade';
 import { installSoundSystem } from '../systems/sound';
-import { playRoomMusic } from '../systems/music';
+import { playRoomMusic, stopRoomMusic } from '../systems/music';
+import { applyPlayerLook, lookTextureKey } from '../systems/playerLook';
+import { applyRoomCamera } from '../systems/roomCamera';
 import { wipeRoom } from '../systems/veil';
+import { installInteractHint } from '../systems/interactHint';
+import { installHitboxDebug } from '../systems/hitboxDebug';
 import { installSlimeAi } from '../systems/ai/slime';
 import { installGhostAi } from '../systems/ai/ghost';
 import { installCrabAi } from '../systems/ai/crab';
@@ -113,10 +120,6 @@ function wallTexture(tx: number, ty: number, scene: Phaser.Scene): string {
   return 'tex-wall';
 }
 
-function roomZoom(gameW: number, gameH: number): number {
-  return Math.max(1, Math.floor(Math.min(gameW, gameH) / WORLD));
-}
-
 /** Centre a smaller arcade box so a 16px sprite can walk a 16px doorway. */
 function insetBody(sprite: Phaser.Physics.Arcade.Sprite, size: number): void {
   const body = sprite.body as Phaser.Physics.Arcade.Body | Phaser.Physics.Arcade.StaticBody | null;
@@ -145,7 +148,10 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   private unsubHydrate: (() => void) | null = null;
   private unsubDied: (() => void) | null = null;
   private unsubRoom: (() => void) | null = null;
+  private unsubPlaying: (() => void) | null = null;
+  private walkKey = 'player-walk';
   private teardownCombat: (() => void) | null = null;
+  private teardownHpBars: (() => void) | null = null;
   private teardownProximity: (() => void) | null = null;
   private teardownFocus: (() => void) | null = null;
   private teardownMarks: (() => void) | null = null;
@@ -153,6 +159,8 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   private teardownSlime: (() => void) | null = null;
   private teardownGhost: (() => void) | null = null;
   private teardownCrab: (() => void) | null = null;
+  private teardownHitboxes: (() => void) | null = null;
+  private teardownHint: (() => void) | null = null;
 
   constructor() {
     super('Overworld');
@@ -168,13 +176,13 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.player = this.physics.add.sprite(start.tx * TILE + 8, start.ty * TILE + 8, 'tex-player');
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(10);
-    insetBody(this.player, PLAYER_BODY);
+    insetBody(this.player, ACTOR_BODY);
     this.physics.add.collider(this.player, this.walls);
 
     this.physics.world.setBounds(0, 0, WORLD, WORLD);
     this.cameras.main.setRoundPixels(true);
     this.cameras.main.setSize(this.scale.gameSize.width, this.scale.gameSize.height);
-    this.lockCamera();
+    this.applyCamera();
     this.scale.on('resize', this.onResize, this);
 
     this.dimLayer = this.add
@@ -197,6 +205,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
 
     this.loadRoom(start.roomId, true);
     this.teardownCombat = installCombatSystem(this);
+    this.teardownHpBars = installHpBars(this);
     this.teardownProximity = installProximitySystem(this);
     this.teardownFocus = installFocusSystem(this);
     this.teardownMarks = installSessionMarks(this);
@@ -204,26 +213,33 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownSlime = installSlimeAi(this);
     this.teardownGhost = installGhostAi(this);
     this.teardownCrab = installCrabAi(this);
+    this.teardownHitboxes = installHitboxDebug(this);
+    this.teardownHint = installInteractHint(this);
 
     this.unsubStore = gameStore.subscribe(() => {
       this.syncFromStore();
     });
 
     this.unsubHydrate = bus.on('sim:hydrated', () => {
+      this.applyLook();
       this.loadRoom(world().player.roomId, true);
     });
+    this.unsubPlaying = bus.on('menu:playing', ({ playing }) => {
+      this.setMenuPlaying(playing);
+    });
     this.unsubRoom = bus.on('sim:event', (event) => {
-      if (event.type === 'room_entered' && event.roomId !== this.loadedRoomId) {
-        setRoomWiping(true);
-        wipeRoom(
-          this,
-          () => this.loadRoom(event.roomId, true),
-          () => setRoomWiping(false),
-        );
-      }
+      if (event.type !== 'room_entered') return;
+      if (event.roomId === this.loadedRoomId) return;
+      setRoomWiping(true);
+      wipeRoom(
+        this,
+        () => this.loadRoom(event.roomId, true),
+        () => setRoomWiping(false),
+      );
     });
     this.unsubDied = bus.on('sim:event', (event) => {
       if (event.type !== 'player_died') return;
+      endKnockback(this.player);
       this.player.setVelocity(0, 0);
       this.haltWalk();
       this.player.setTint(DEAD_TINT);
@@ -232,6 +248,10 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.prev = world();
     this.events.once('shutdown', this.shutdown, this);
     bus.emit('world:ready', { sceneKey: 'Overworld' });
+    this.applyLook();
+    this.time.delayedCall(0, () => {
+      if (!isPlaying()) this.setMenuPlaying(false);
+    });
   }
 
   loadRoom(roomId: string, snapPlayer: boolean): void {
@@ -251,10 +271,11 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.plantTorches(room);
     this.spawnEntities(roomId);
     if (snapPlayer) this.resetPlayer();
-    this.lockCamera();
+    this.applyCamera();
     this.physics.world.setBounds(0, 0, WORLD, WORLD);
     this.dimLayer.setSize(WORLD, WORLD);
-    playRoomMusic(this, room.kind);
+    if (isPlaying()) playRoomMusic(this, room.kind);
+    else stopRoomMusic();
   }
 
   update(): void {
@@ -264,45 +285,48 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       this.haltWalk();
       return;
     }
-    const left = this.cursors.left.isDown || this.wasd.A.isDown;
-    const right = this.cursors.right.isDown || this.wasd.D.isDown;
-    const up = this.cursors.up.isDown || this.wasd.W.isDown;
-    const down = this.cursors.down.isDown || this.wasd.S.isDown;
-    let vx = 0;
-    let vy = 0;
-    let facing: Facing | null = null;
-    if (left) {
-      vx = -SPEED;
-      facing = 'left';
-    } else if (right) {
-      vx = SPEED;
-      facing = 'right';
-    }
-    if (up) {
-      vy = -SPEED;
-      facing = facing ?? 'up';
-    } else if (down) {
-      vy = SPEED;
-      facing = facing ?? 'down';
-    }
-    this.player.setVelocity(vx, vy);
-    if (facing === 'left') this.player.setFlipX(true);
-    if (facing === 'right') this.player.setFlipX(false);
-    const moving = vx !== 0 || vy !== 0;
-    if (moving) requestSessionDismiss();
-    if (moving) this.playWalk();
-    else this.haltWalk();
-    if (facing) {
-      this.facing = facing;
-      const tx = Math.floor(this.player.x / TILE);
-      const ty = Math.floor(this.player.y / TILE);
-      if (tx !== this.lastTx || ty !== this.lastTy) {
-        this.lastTx = tx;
-        this.lastTy = ty;
-        bus.emit('world:tile_entered', { tx, ty, facing });
-        this.tryPickup(tx, ty);
+    const knocked = tickKnockback(this.player, this.time.now);
+    if (!knocked) {
+      const left = this.cursors.left.isDown || this.wasd.A.isDown;
+      const right = this.cursors.right.isDown || this.wasd.D.isDown;
+      const up = this.cursors.up.isDown || this.wasd.W.isDown;
+      const down = this.cursors.down.isDown || this.wasd.S.isDown;
+      let vx = 0;
+      let vy = 0;
+      let facing: Facing | null = null;
+      if (left) {
+        vx = -SPEED;
+        facing = 'left';
+      } else if (right) {
+        vx = SPEED;
+        facing = 'right';
       }
-      this.tryPassage(tx, ty, facing);
+      if (up) {
+        vy = -SPEED;
+        facing = facing ?? 'up';
+      } else if (down) {
+        vy = SPEED;
+        facing = facing ?? 'down';
+      }
+      this.player.setVelocity(vx, vy);
+      if (facing === 'left') this.player.setFlipX(true);
+      if (facing === 'right') this.player.setFlipX(false);
+      const moving = vx !== 0 || vy !== 0;
+      if (moving) requestSessionDismiss();
+      if (moving) this.playWalk();
+      else this.haltWalk();
+      if (facing) this.facing = facing;
+    } else {
+      this.haltWalk();
+    }
+    const tx = Math.floor(this.player.x / TILE);
+    const ty = Math.floor(this.player.y / TILE);
+    if (tx !== this.lastTx || ty !== this.lastTy) {
+      this.lastTx = tx;
+      this.lastTy = ty;
+      bus.emit('world:tile_entered', { tx, ty, facing: this.facing });
+      this.tryPickup(tx, ty);
+      this.tryPassage(tx, ty, this.facing);
     }
   }
 
@@ -326,14 +350,34 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
   }
 
   private playWalk(): void {
-    if (!this.anims.exists('player-walk')) return;
-    if (this.player.anims.currentAnim?.key === 'player-walk' && this.player.anims.isPlaying) return;
-    this.player.play('player-walk');
+    if (!this.anims.exists(this.walkKey)) return;
+    if (this.player.anims.currentAnim?.key === this.walkKey && this.player.anims.isPlaying) return;
+    this.player.play(this.walkKey);
   }
 
   private haltWalk(): void {
     if (this.player.anims.isPlaying) this.player.anims.stop();
-    if (this.player.texture.key !== 'tex-player') this.player.setTexture('tex-player');
+    const idle = lookTextureKey(world().player.appearance);
+    const tex = this.textures.exists(idle) ? idle : 'tex-player';
+    if (this.player.texture.key !== tex) this.player.setTexture(tex);
+  }
+
+  private applyLook(): void {
+    this.walkKey = applyPlayerLook(this, this.player, world().player.appearance);
+  }
+
+  private setMenuPlaying(playing: boolean): void {
+    this.applyLook();
+    if (playing) {
+      this.scene.resume('Overworld');
+      const room = world().dungeon.rooms[world().player.roomId];
+      if (room) playRoomMusic(this, room.kind);
+      return;
+    }
+    this.player.setVelocity(0, 0);
+    this.haltWalk();
+    stopRoomMusic();
+    this.scene.pause('Overworld');
   }
 
   private resetPlayer(): void {
@@ -342,6 +386,7 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.lastTx = start.tx;
     this.lastTy = start.ty;
     this.player.setPosition(start.tx * TILE + 8, start.ty * TILE + 8);
+    endKnockback(this.player);
     this.player.setVelocity(0, 0);
     this.player.setFlipX(start.facing === 'left');
     this.player.setAngle(0);
@@ -355,7 +400,9 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.unsubHydrate?.();
     this.unsubDied?.();
     this.unsubRoom?.();
+    this.unsubPlaying?.();
     this.teardownCombat?.();
+    this.teardownHpBars?.();
     this.teardownProximity?.();
     this.teardownFocus?.();
     this.teardownMarks?.();
@@ -363,21 +410,19 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
     this.teardownSlime?.();
     this.teardownGhost?.();
     this.teardownCrab?.();
+    this.teardownHitboxes?.();
+    this.teardownHint?.();
     this.scale.off('resize', this.onResize, this);
     this.prev = null;
   }
 
   private onResize(gameSize: Phaser.Structs.Size): void {
     this.cameras.main.setSize(gameSize.width, gameSize.height);
-    this.lockCamera();
+    this.applyCamera();
   }
 
-  private lockCamera(): void {
-    const zoom = roomZoom(this.scale.gameSize.width, this.scale.gameSize.height);
-    this.cameras.main.setZoom(zoom);
-    this.cameras.main.setBounds(0, 0, WORLD, WORLD);
-    this.cameras.main.stopFollow();
-    this.cameras.main.centerOn(WORLD / 2, WORLD / 2);
+  private applyCamera(): void {
+    applyRoomCamera(this, this.player);
   }
 
   private clearDecor(): void {
@@ -401,7 +446,8 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       const body = sprite.body as Phaser.Physics.Arcade.Body;
       body.setImmovable(true);
       body.allowGravity = false;
-      insetBody(sprite, PLAYER_BODY);
+      const foe = entity.kind === 'enemy' || entity.kind === 'elite';
+      insetBody(sprite, foe ? ACTOR_BODY : PROP_BODY);
       if (entity.tags.includes('pickup')) {
         body.checkCollision.none = true;
       } else {

@@ -1,6 +1,19 @@
-// Full-screen shadow wipe used when swapping 12×12 rooms.
+// Full-screen shadow wipe when swapping 12×12 rooms.
+// The veil is laid in world space over `camera.worldView` so zoom cannot
+// shrink it into a corner. Camera fade is the same shade, viewport-true.
 
 import Phaser from 'phaser';
+
+const SHADE = 0x05060c;
+const PAD = 64;
+const OUT_MS = 200;
+const IN_MS = 280;
+
+function cover(veil: Phaser.GameObjects.Rectangle, cam: Phaser.Cameras.Scene2D.Camera): void {
+  const view = cam.worldView;
+  veil.setPosition(view.centerX, view.centerY);
+  veil.setSize(view.width + PAD, view.height + PAD);
+}
 
 export function wipeRoom(
   scene: Phaser.Scene,
@@ -8,22 +21,26 @@ export function wipeRoom(
   done?: () => void,
 ): void {
   const cam = scene.cameras.main;
-  const veil = scene.add
-    .rectangle(cam.worldView.centerX, cam.worldView.centerY, cam.displayWidth + 8, cam.displayHeight + 8, 0x05060c, 0)
-    .setScrollFactor(0)
-    .setDepth(80);
+  cam.resetFX();
+  const veil = scene.add.rectangle(0, 0, 8, 8, SHADE, 0).setDepth(1000);
+  cover(veil, cam);
+  cam.fadeOut(OUT_MS, 5, 6, 12);
+
   scene.tweens.add({
     targets: veil,
     alpha: 1,
-    duration: 160,
+    duration: OUT_MS,
     onComplete: () => {
       swap();
+      cover(veil, scene.cameras.main);
+      cam.fadeIn(IN_MS, 5, 6, 12);
       scene.tweens.add({
         targets: veil,
         alpha: 0,
-        duration: 220,
+        duration: IN_MS,
         onComplete: () => {
-          veil.destroy();
+          if (veil.active) veil.destroy();
+          cam.resetFX();
           done?.();
         },
       });

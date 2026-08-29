@@ -6,6 +6,7 @@ import { gameStore, world } from '../../../lib/sim/store';
 import { bus } from '../../EventBus';
 import { TILE } from '../../const';
 import { playFileSfx } from '../sound';
+import { KNOCK, beginKnockback, dirFromTo, isKnocking } from '../knockback';
 
 type Phase = 'idle' | 'shake' | 'charge' | 'stun' | 'pincer_l' | 'pincer_r';
 
@@ -38,6 +39,8 @@ export function installCrabAi(scene: Phaser.Scene): () => void {
     const dx = s.player.x - (crab.x + side * 10);
     const dy = s.player.y - crab.y;
     if (Math.hypot(dx, dy) < reach) {
+      const away = dirFromTo(crab.x, crab.y, s.player.x, s.player.y);
+      beginKnockback(s.player, away.x, away.y, KNOCK.playerSpeed, scene.time.now);
       bus.emit('world:player_hurt', { amount: 2, source: 'dungeon crab' });
     }
   };
@@ -53,6 +56,7 @@ export function installCrabAi(scene: Phaser.Scene): () => void {
     const now = scene.time.now;
     const body = crab.body as Phaser.Physics.Arcade.Body;
     const max = ROOM_SIZE * TILE - 12;
+    if (isKnocking(crab, now)) return;
 
     if (phase === 'shake') {
       crab.x = originX + ((Math.floor(now / 40) % 2) * 2 - 1) * 2;

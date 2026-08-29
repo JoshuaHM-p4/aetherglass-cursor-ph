@@ -68,6 +68,50 @@ export function SettingsButton({
   );
 }
 
+function HitboxGlyph(): JSX.Element {
+  return (
+    <svg
+      width={22}
+      height={22}
+      viewBox="0 0 16 16"
+      aria-hidden
+      className="pointer-events-none"
+      style={{ imageRendering: 'pixelated' }}
+    >
+      <rect x="1" y="1" width="14" height="14" fill="none" stroke="#c9a86a" strokeWidth="1" />
+      <rect x="5" y="5" width="6" height="6" fill="#c9a86a" />
+    </svg>
+  );
+}
+
+export function HitboxButton({
+  on,
+  onClick,
+}: {
+  on: boolean;
+  onClick: () => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      title="hitboxes (F3)"
+      aria-pressed={on}
+      onClick={(event) => {
+        onClick();
+        event.currentTarget.blur();
+      }}
+      className={`pointer-events-auto flex h-12 w-12 flex-col items-center justify-center border ${
+        on
+          ? 'border-amber-400/80 bg-black/55 shadow-[0_0_10px_rgba(201,168,106,0.35)]'
+          : 'border-white/15 bg-black/40 hover:border-amber-200/50'
+      }`}
+    >
+      <HitboxGlyph />
+      <span className="mt-0.5 font-pixel text-[7px] tracking-widest text-white/40">F3</span>
+    </button>
+  );
+}
+
 function MixSlider({
   label,
   value,
@@ -104,7 +148,13 @@ function MixSlider({
   );
 }
 
-export default function SettingsModal({ onClose }: { onClose: () => void }): JSX.Element {
+export default function SettingsModal({
+  onClose,
+  onSaveAndExit,
+}: {
+  onClose: () => void;
+  onSaveAndExit?: () => void;
+}): JSX.Element {
   const levels = useSyncExternalStore(subscribeVolume, getVolumeLevels, () => DEFAULT_VOLUME);
 
   return (
@@ -156,13 +206,18 @@ export default function SettingsModal({ onClose }: { onClose: () => void }): JSX
           >
             RESET
           </button>
-          <button
-            type="button"
-            onClick={() => playFileSfx('select')}
-            className="border border-white/15 bg-black/25 px-3 py-2 font-pixel text-[10px] tracking-[0.2em] text-amber-100/70 hover:border-amber-200/40"
-          >
-            SAVE AND EXIT
-          </button>
+          {onSaveAndExit && (
+            <button
+              type="button"
+              onClick={() => {
+                playFileSfx('select');
+                onSaveAndExit();
+              }}
+              className="border border-white/15 bg-black/25 px-3 py-2 font-pixel text-[10px] tracking-[0.2em] text-amber-100/70 hover:border-amber-200/40"
+            >
+              SAVE AND EXIT
+            </button>
+          )}
         </div>
         <p className="mt-3 font-pixel text-[8px] text-white/35">esc to close</p>
       </div>

@@ -152,6 +152,53 @@ describe('sim failure modes', () => {
     expect(again.reason).toBe('already_dead');
   });
 
+  it('STRIKE_ENTITY reaches three tiles away', () => {
+    const state = initialState();
+    state.entities.dummy_slime = {
+      id: 'dummy_slime',
+      kind: 'enemy',
+      name: 'cave slime',
+      tags: ['slime', 'foul'],
+      state: 'idle',
+      tx: state.player.tx + 3,
+      ty: state.player.ty,
+      roomId: state.player.roomId,
+      hp: 3,
+      hpMax: 3,
+    };
+    const result = applyAction(state, {
+      type: 'STRIKE_ENTITY',
+      entityId: 'dummy_slime',
+      amount: 1,
+      withItemId: null,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('STRIKE_ENTITY misses four tiles away', () => {
+    const state = initialState();
+    state.entities.dummy_slime = {
+      id: 'dummy_slime',
+      kind: 'enemy',
+      name: 'cave slime',
+      tags: ['slime', 'foul'],
+      state: 'idle',
+      tx: state.player.tx + 4,
+      ty: state.player.ty,
+      roomId: state.player.roomId,
+      hp: 3,
+      hpMax: 3,
+    };
+    const result = applyAction(state, {
+      type: 'STRIKE_ENTITY',
+      entityId: 'dummy_slime',
+      amount: 1,
+      withItemId: null,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('not_nearby');
+  });
+
   it('applyBatch with a bad second effect → nothing applied', () => {
     const state = initialState();
     const hp = state.player.hp;

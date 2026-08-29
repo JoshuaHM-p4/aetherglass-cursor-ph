@@ -95,6 +95,10 @@ export interface BusEvents {
   'hud:bag_toggled': { open: boolean };
   'hud:settings_toggled': { open: boolean };
   'hud:toast': { text: string };
+
+  // ------------------------------------------------------------------ menu -> world
+  // Producer: React title overlay. Consumer: Overworld pause/resume + music.
+  'menu:playing': { playing: boolean };
 }
 
 export type BusEventName = keyof BusEvents;

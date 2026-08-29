@@ -8,22 +8,12 @@
 import { useEffect, useRef } from 'react';
 import { installWorldAdapter } from './EventBus';
 import { StartGame } from './main';
-import { atFountain, clearSave, loadSave } from '../lib/client/save';
-import { gameStore } from '../lib/sim/store';
 
 export default function PhaserGame() {
   const gameRef = useRef<Phaser.Game | null>(null);
 
   useEffect(() => {
     if (gameRef.current) return;
-    try {
-      const saved = loadSave();
-      if (saved) {
-        gameStore.getState().hydrate(atFountain(saved, saved.player.hp <= 0));
-      }
-    } catch {
-      clearSave();
-    }
     const teardownAdapter = installWorldAdapter();
     gameRef.current = StartGame('game-container');
     const root = document.getElementById('game-container');

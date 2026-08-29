@@ -103,6 +103,10 @@ export interface PlayerState {
   facing: Facing;
   bag: Item[];
   hotbar: [string | null, string | null, string | null];
+  /** Display name chosen at New Game. */
+  name: string;
+  /** Kenney Tiny Dungeon body. See lib/sim/appearances.ts. */
+  appearance: string;
 }
 
 export interface GameState {
@@ -200,6 +204,7 @@ export interface ContextPacket {
     paneIntegrity: number;
     facing: Facing;
     position: { x: number; y: number };
+    name?: string;
   };
   inventory: Array<{ id: string; name: string; tags: string[]; qty: number }>;
   /** Nearest 8 only — the Pane can't talk about rooms you haven't reached. */

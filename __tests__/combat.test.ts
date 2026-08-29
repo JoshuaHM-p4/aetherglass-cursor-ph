@@ -1,20 +1,50 @@
 import { describe, expect, it } from 'vitest';
-import { swingHitbox } from '../game/systems/hitbox';
+import { inEnemyContact, inSwingCone } from '../game/systems/hitbox';
 import { hurtShakeOffset } from '../game/systems/hurtFx';
 import { slashAlpha, swingAngle, swingLunge, swingProgress } from '../game/systems/swingFx';
+import { dirFromTo, facingDir, knockSpeedAt } from '../game/systems/knockback';
 
-describe('swingHitbox', () => {
-  it('faces right as a 1xN strip in front of the player', () => {
-    expect(swingHitbox(5, 5, 'right', 1)).toEqual({ tx: 6, ty: 5, w: 1, h: 1 });
+describe('inSwingCone', () => {
+  const ox = 80;
+  const oy = 80;
+
+  it('hits in front of the player', () => {
+    expect(inSwingCone(ox, oy, ox + 20, oy, 'right', 1)).toBe(true);
+    expect(inSwingCone(ox, oy, ox - 20, oy, 'left', 1)).toBe(true);
+    expect(inSwingCone(ox, oy, ox, oy + 20, 'down', 1)).toBe(true);
+    expect(inSwingCone(ox, oy, ox, oy - 20, 'up', 1)).toBe(true);
   });
-  it('faces left from the far edge of the reach', () => {
-    expect(swingHitbox(5, 5, 'left', 2)).toEqual({ tx: 3, ty: 5, w: 2, h: 1 });
+
+  it('hits diagonally inside the swipe arc', () => {
+    expect(inSwingCone(ox, oy, ox + 16, oy + 16, 'right', 1)).toBe(true);
+    expect(inSwingCone(ox, oy, ox + 16, oy - 16, 'right', 1)).toBe(true);
   });
-  it('faces down', () => {
-    expect(swingHitbox(5, 5, 'down', 1)).toEqual({ tx: 5, ty: 6, w: 1, h: 1 });
+
+  it('misses behind, beside, and past the tip', () => {
+    expect(inSwingCone(ox, oy, ox - 16, oy, 'right', 1)).toBe(false);
+    expect(inSwingCone(ox, oy, ox, oy + 20, 'right', 1)).toBe(false);
+    expect(inSwingCone(ox, oy, ox + 80, oy, 'right', 1)).toBe(false);
   });
-  it('faces up', () => {
-    expect(swingHitbox(5, 5, 'up', 1)).toEqual({ tx: 5, ty: 4, w: 1, h: 1 });
+
+  it('treats the enemy as a disk so a glancing centre still connects', () => {
+    expect(inSwingCone(ox, oy, ox + 8, oy + 20, 'right', 1, 0)).toBe(false);
+    expect(inSwingCone(ox, oy, ox + 8, oy + 20, 'right', 1)).toBe(true);
+  });
+});
+
+describe('inEnemyContact', () => {
+  const px = 80;
+  const py = 80;
+
+  it('hurts when the equal 6px bodies are touching', () => {
+    expect(inEnemyContact(px, py, px + 6, py)).toBe(true);
+    expect(inEnemyContact(px, py, px, py + 6)).toBe(true);
+  });
+
+  it('does not hurt when the boxes are apart', () => {
+    expect(inEnemyContact(px, py, px + 8, py)).toBe(false);
+    expect(inEnemyContact(px, py, px + 12, py)).toBe(false);
+    expect(inEnemyContact(px, py, px + 16, py)).toBe(false);
   });
 });
 
@@ -66,5 +96,26 @@ describe('swing pose', () => {
     expect(slashAlpha(0)).toBe(0);
     expect(slashAlpha(0.3)).toBe(1);
     expect(slashAlpha(1)).toBe(0);
+  });
+});
+
+describe('knockback', () => {
+  it('pushes the victim away from the attacker', () => {
+    expect(dirFromTo(0, 0, 10, 0)).toEqual({ x: 1, y: 0 });
+    expect(dirFromTo(10, 0, 0, 0)).toEqual({ x: -1, y: 0 });
+  });
+
+  it('sends a sword hit along the swing', () => {
+    expect(facingDir('right')).toEqual({ x: 1, y: 0 });
+    expect(facingDir('left')).toEqual({ x: -1, y: 0 });
+    expect(facingDir('up')).toEqual({ x: 0, y: -1 });
+    expect(facingDir('down')).toEqual({ x: 0, y: 1 });
+  });
+
+  it('decays to zero over the window', () => {
+    expect(knockSpeedAt(-1, 180, 200)).toBe(0);
+    expect(knockSpeedAt(0, 180, 200)).toBe(200);
+    expect(knockSpeedAt(90, 180, 200)).toBe(100);
+    expect(knockSpeedAt(180, 180, 200)).toBe(0);
   });
 });

@@ -16,8 +16,17 @@ import type { Facing } from '../../lib/sim/types';
 import { world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
 import { getHotbarSlot, isWorldInputBlocked } from '../inputCapture';
-import { swingHitbox } from './hitbox';
+import { inEnemyContact, inSwingCone } from './hitbox';
 import { hurtShakeOffset } from './hurtFx';
+import {
+  KNOCK,
+  beginKnockback,
+  dirFromTo,
+  endKnockback,
+  facingDir,
+  isKnocking,
+  tickKnockback,
+} from './knockback';
 import { playSfx } from './sound';
 import {
   slashAlpha,
@@ -29,16 +38,6 @@ import {
 } from './swingFx';
 
 export { swingHitbox } from './hitbox';
-
-const TILE = 16;
-
-/**
- * Enemy bodies are immovable and the player collides with them, so the player never
- * overlaps a slime — arcade separation parks the two centres exactly one tile apart.
- * A strict `< TILE` test would therefore never fire; the cushion absorbs the pixel of
- * float slop separation leaves behind.
- */
-const CONTACT_RANGE = TILE + 1;
 
 export const COMBAT = {
   swingMs: 180,
@@ -108,7 +107,12 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     ? scene.add.image(0, 0, 'tex-sword').setVisible(false).setOrigin(0.5, 0.88).setDepth(12)
     : null;
   const slash = scene.textures.exists('tex-slash-0')
-    ? scene.add.sprite(0, 0, 'tex-slash-0').setVisible(false).setDepth(13)
+    ? scene.add
+        .sprite(0, 0, 'tex-slash-0')
+        .setVisible(false)
+        .setDepth(13)
+        .setOrigin(11 / 32, 0.5)
+        .setScale(1.7)
     : null;
 
   const hideSwing = (): void => {
@@ -176,7 +180,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     s.player.setAlpha(1);
   };
 
-  const playHurt = (): void => {
+  const playHurt = (fromX: number, fromY: number): void => {
     const now = scene.time.now;
     iframeUntil = now + COMBAT.iFramesMs;
     hurtAt = now;
@@ -188,6 +192,11 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
         s.player.setTintMode(Phaser.TintModes.MULTIPLY).setTint(COMBAT.hurtTint);
       }
     });
+    const away = dirFromTo(fromX, fromY, s.player.x, s.player.y, {
+      x: -facingDir(s.facing).x,
+      y: -facingDir(s.facing).y,
+    });
+    beginKnockback(s.player, away.x, away.y, KNOCK.playerSpeed, now);
   };
 
   const onSpace = () => {
@@ -205,20 +214,15 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
       slash.setVisible(true).setAlpha(1);
       if (scene.anims.exists('slash-arc')) slash.play('slash-arc', true);
     }
-    const tileX = Math.floor(s.player.x / TILE);
-    const tileY = Math.floor(s.player.y / TILE);
-    const box = swingHitbox(tileX, tileY, facing, reach);
-    const left = box.tx * TILE;
-    const top = box.ty * TILE;
-    const right = left + box.w * TILE;
-    const bottom = top + box.h * TILE;
     for (const obj of s.entityLayer.list) {
       const sprite = obj as Phaser.Physics.Arcade.Sprite;
       const id = sprite.name;
       const entity = world().entities[id];
       if (!entity || (entity.kind !== 'enemy' && entity.kind !== 'elite')) continue;
       if (entity.state === 'dead') continue;
-      if (sprite.x >= left && sprite.x < right && sprite.y >= top && sprite.y < bottom) {
+      if (inSwingCone(s.player.x, s.player.y, sprite.x, sprite.y, facing, reach)) {
+        const along = facingDir(facing);
+        beginKnockback(sprite, along.x, along.y, KNOCK.enemySpeed, now);
         bus.emit('world:attack_landed', { entityId: id, facing, withItemId: itemId });
       }
     }
@@ -245,13 +249,21 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
         const entity = world().entities[sprite.name];
         if (!entity || (entity.kind !== 'enemy' && entity.kind !== 'elite')) continue;
         if (entity.state === 'dead') continue;
-        const dx = Math.abs(sprite.x - s.player.x);
-        const dy = Math.abs(sprite.y - s.player.y);
-        if (dx <= CONTACT_RANGE && dy <= CONTACT_RANGE) {
-          playHurt();
+        if (inEnemyContact(s.player.x, s.player.y, sprite.x, sprite.y)) {
+          playHurt(sprite.x, sprite.y);
           bus.emit('world:player_hurt', { amount: 1, source: entity.name });
           break;
         }
+      }
+    }
+
+    for (const obj of s.entityLayer.list) {
+      const sprite = obj as Phaser.Physics.Arcade.Sprite;
+      const was = isKnocking(sprite, now);
+      tickKnockback(sprite, now);
+      if (!was || isKnocking(sprite, now)) continue;
+      if (world().entities[sprite.name]?.state === 'dead' && sprite.body) {
+        sprite.body.enable = false;
       }
     }
   };
@@ -302,13 +314,14 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
       const sprite = s.entityLayer.getByName(event.entityId) as Phaser.Physics.Arcade.Sprite | null;
       if (!sprite) return;
       sprite.setTint(DEAD_TINT).setAlpha(0.5);
-      if (sprite.body) sprite.body.enable = false;
+      if (sprite.body && !isKnocking(sprite, scene.time.now)) sprite.body.enable = false;
     }
     if (event.type === 'player_died') {
       hurtAt = 0;
       endHurtVisual();
       hideSwing();
       clearLunge();
+      endKnockback(s.player);
     }
   });
 
@@ -318,6 +331,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     endHurtVisual();
     hideSwing();
     clearLunge();
+    endKnockback(s.player);
   });
 
   return () => {

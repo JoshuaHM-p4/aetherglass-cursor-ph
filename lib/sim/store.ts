@@ -28,7 +28,7 @@
 
 import { createStore } from 'zustand/vanilla';
 import { bus } from '../../game/EventBus';
-import { clearSave, writeSave } from '../client/save';
+import { writeSave } from '../client/save';
 import { applyAction, initialState } from './reducer';
 import { check } from './rules';
 import type {
@@ -163,8 +163,10 @@ export const gameStore = createStore<GameStore>((set, get) => {
       bus.emit('sim:hydrated', { entityCount: Object.keys(result.state.entities).length });
     },
     hardReset() {
-      clearSave();
+      const { name, appearance } = get().state.player;
       const fresh = initialState((Math.random() * 0xffffffff) >>> 0);
+      fresh.player.name = name;
+      fresh.player.appearance = appearance;
       get().hydrate(fresh);
     },
     setInteractTarget(entityId) {

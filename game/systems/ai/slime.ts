@@ -4,6 +4,7 @@ import Phaser from 'phaser';
 import { ROOM_SIZE } from '../../../lib/dungeon/const';
 import { world } from '../../../lib/sim/store';
 import { TILE } from '../../const';
+import { isKnocking } from '../knockback';
 
 const HOP_MS = 720;
 const HOP_SPEED = 55;
@@ -27,6 +28,7 @@ export function installSlimeAi(scene: Phaser.Scene): () => void {
       if (!entity || entity.state === 'dead' || !entity.tags.includes('slime')) continue;
       if (entity.roomId !== roomId) continue;
       if (!sprite.body) continue;
+      if (isKnocking(sprite, now)) continue;
       const due = hopAt.get(sprite.name) ?? 0;
       if (now < due) continue;
       hopAt.set(sprite.name, now + HOP_MS);
@@ -36,7 +38,7 @@ export function installSlimeAi(scene: Phaser.Scene): () => void {
       const body = sprite.body as Phaser.Physics.Arcade.Body;
       body.setVelocity((dx / len) * HOP_SPEED, (dy / len) * HOP_SPEED);
       scene.time.delayedCall(220, () => {
-        if (sprite.active) body.setVelocity(0, 0);
+        if (sprite.active && !isKnocking(sprite, scene.time.now)) body.setVelocity(0, 0);
       });
       const max = ROOM_SIZE * TILE - 8;
       sprite.x = Phaser.Math.Clamp(sprite.x, 8, max);

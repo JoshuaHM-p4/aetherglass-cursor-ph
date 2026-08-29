@@ -30,6 +30,7 @@ export function buildContextPacket(state: GameState, journal: PaneJournal): Cont
       paneIntegrity: state.player.paneIntegrity,
       facing: state.player.facing,
       position: { x: state.player.tx, y: state.player.ty },
+      name: state.player.name,
     },
     inventory: state.player.bag.map(i => ({
       id: i.id,

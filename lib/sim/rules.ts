@@ -31,7 +31,7 @@
 import { EXIT_TILE, ROOM_SIZE } from '../dungeon/const';
 import { recipe } from './recipes';
 import { isKnownItem } from './registry';
-import { bagHasRoomFor, findItem, heldQty, isAdjacent } from './select';
+import { bagHasRoomFor, findItem, heldQty, inStrikeRange, isAdjacent } from './select';
 import type { Action, GameState, ItemTag, RejectReason } from './types';
 
 /** The result of asking permission. Never throws; failure is a value. */
@@ -155,6 +155,7 @@ export const guards: Guards = {
       return fail('not_nearby');
     }
     if (!state.dungeon.rooms[action.roomId]) return fail('no_such_entity');
+    if (state.dungeon.rooms[action.roomId]?.kind === 'fountain') return fail('not_nearby');
     return PASS;
   },
 
@@ -171,11 +172,11 @@ export const guards: Guards = {
   },
   DAMAGE_PANE: () => PASS,
 
-  /** Keyboard-only in practice, but guarded identically: adjacency, kind, not already dead. */
+  /** Phaser already resolved the cone; the sim only checks the strike is in-room and close. */
   STRIKE_ENTITY: (state, action) => {
     const entity = state.entities[action.entityId];
     if (!entity) return fail('no_such_entity');
-    if (!isAdjacent(state, action.entityId)) return fail('not_nearby');
+    if (!inStrikeRange(state, action.entityId)) return fail('not_nearby');
     if (entity.kind !== 'enemy' && entity.kind !== 'elite') return fail('wrong_kind');
     if (entity.state === 'dead') return fail('already_dead');
     return PASS;

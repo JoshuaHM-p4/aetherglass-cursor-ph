@@ -62,10 +62,10 @@ export function swordHand(facing: Facing): { x: number; y: number } {
 }
 
 export function slashPlace(facing: Facing): { x: number; y: number; angle: number } {
-  if (facing === 'right') return { x: 14, y: 1, angle: 0 };
-  if (facing === 'left') return { x: -14, y: 1, angle: 180 };
-  if (facing === 'down') return { x: 1, y: 14, angle: 90 };
-  return { x: 1, y: -14, angle: -90 };
+  if (facing === 'right') return { x: 8, y: 1, angle: 0 };
+  if (facing === 'left') return { x: -8, y: 1, angle: 180 };
+  if (facing === 'down') return { x: 1, y: 8, angle: 90 };
+  return { x: 1, y: -8, angle: -90 };
 }
 
 export function slashAlpha(t: number): number {

@@ -170,6 +170,7 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
     play(stepFlip ? 'step_a' : 'step_b', 0.9 + Math.random() * 0.2);
   });
   const offHurt = bus.on('world:player_hurt', () => play('hurt', 0.95 + Math.random() * 0.1));
+  const offHit = bus.on('world:attack_landed', () => play('hit', 0.94 + Math.random() * 0.12));
   const offEvent = bus.on('sim:event', (event) => {
     if (event.type === 'container_opened') play('chest');
     if (event.type === 'item_gained') {
@@ -180,7 +181,6 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
       } else if (event.itemId === 'master_key') playFileSfx('secret');
       else playFileSfx('fanfare', 0.7);
     }
-    if (event.type === 'entity_struck') play('hit', 0.94 + Math.random() * 0.12);
     if (event.type === 'pane_cracked') play('glass_close', 1.3);
     if (event.type === 'player_died') play('death');
     if (event.type === 'entity_state_changed' && event.state === 'unlocked') {
@@ -209,6 +209,7 @@ export function installSoundSystem(scene: Phaser.Scene): () => void {
   return () => {
     offTile();
     offHurt();
+    offHit();
     offEvent();
     offAwake();
     offIntro();

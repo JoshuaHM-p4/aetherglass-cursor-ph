@@ -3,6 +3,7 @@ import { ALL_FACINGS, EXIT_TILE, FOUNTAIN_ROOM_ID } from '../lib/dungeon/const';
 import { keyInvariantHolds } from '../lib/dungeon/generate';
 import { applyAction, initialState } from '../lib/sim/reducer';
 import type { Facing, GameState } from '../lib/sim/types';
+import { isPaneInteractable, pickAdjacentEntity } from '../game/systems/interactTarget';
 
 function enter(state: GameState, dir: Facing) {
   const edge = EXIT_TILE[dir];
@@ -45,6 +46,39 @@ function explore(seed: number, steps: number): GameState {
 }
 
 describe('dungeon generation', () => {
+  it('boots a fountain with no enemies', () => {
+    const state = initialState(1);
+    const foes = Object.values(state.entities).filter(
+      (e) => e.kind === 'enemy' || e.kind === 'elite',
+    );
+    expect(foes).toHaveLength(0);
+  });
+
+  it('ghost cannot move into the fountain', () => {
+    const carved = enter(initialState(7), 'up').state;
+    carved.entities.ghost_01 = {
+      id: 'ghost_01',
+      kind: 'enemy',
+      name: 'pale ghost',
+      tags: ['ghost', 'ethereal'],
+      state: 'idle',
+      tx: 6,
+      ty: 6,
+      roomId: carved.player.roomId,
+      hp: 4,
+      hpMax: 4,
+    };
+    const result = applyAction(carved, {
+      type: 'MOVE_ENTITY',
+      entityId: 'ghost_01',
+      roomId: FOUNTAIN_ROOM_ID,
+      tx: 6,
+      ty: 6,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('not_nearby');
+  });
+
   it('boots a fountain with a north opening and the scavenger below it', () => {
     const state = initialState(1);
     expect(state.player.roomId).toBe(FOUNTAIN_ROOM_ID);
@@ -56,6 +90,12 @@ describe('dungeon generation', () => {
     expect(state.entities.fountain_00?.paneWorthy).toBe(true);
   });
 
+  it('picks the fountain for an Aetherglass hint when facing it', () => {
+    const state = initialState(1);
+    const target = pickAdjacentEntity(state, 'up', isPaneInteractable);
+    expect(target?.id).toBe('fountain_00');
+  });
+
   it('ENTER_PASSAGE carves a cave and lands the player on the opposite interior tile', () => {
     const result = enter(initialState(7), 'up');
     expect(result.ok).toBe(true);
@@ -65,6 +105,17 @@ describe('dungeon generation', () => {
     expect(result.events).toContainEqual(
       expect.objectContaining({ type: 'room_entered', kind: 'cave' }),
     );
+  });
+
+  it('never places a ghost or slime in the fountain across many seeds', () => {
+    for (let seed = 1; seed <= 24; seed++) {
+      const state = explore(seed, 28);
+      for (const entity of Object.values(state.entities)) {
+        if (entity.kind !== 'enemy' && entity.kind !== 'elite') continue;
+        expect(entity.roomId, `${entity.id} seed ${seed}`).not.toBe(FOUNTAIN_ROOM_ID);
+        expect(state.dungeon.rooms[entity.roomId]?.kind).not.toBe('fountain');
+      }
+    }
   });
 
   it('keeps a reachable key for every keyed lock across many seeds', () => {

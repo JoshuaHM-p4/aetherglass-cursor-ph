@@ -7,6 +7,7 @@
 
 import type { FocusData } from '../../lib/oracle/protocol';
 import { bus } from '../EventBus';
+import { applyRoomCamera } from './roomCamera';
 
 export interface FocusSceneParts {
   /** Container whose children are named with entity ids. `getByName(entityId)` is the lookup. */
@@ -58,7 +59,7 @@ export function installFocusSystem(
     });
     scene.spotlight.setVisible(false);
     scene.leaderLine.clear();
-    scene.cameras.main.startFollow(scene.player, true, 1, 1);
+    applyRoomCamera(scene, scene.player);
   };
 
   const onFocus = ({ entityId, style }: FocusData) => {

@@ -29,6 +29,8 @@ export const BAG_SLOTS = 12;
 export const NEARBY_LIMIT = 8;
 /** Chebyshev tiles. Adjacency for interaction; also the prefetch trigger radius is 3. */
 export const REACH_TILES = 1;
+/** Blade cone can cover ~3 tiles; sim strike uses this, not REACH_TILES. */
+export const STRIKE_TILES = 3;
 
 export interface RankedEntity extends Entity {
   /** Chebyshev distance in tiles from the player. */
@@ -67,6 +69,11 @@ export function isAdjacent(state: GameState, entityId: string): boolean {
   return distanceTo(state, entityId) <= REACH_TILES;
 }
 
+/** True when a swing could legally connect. Wider than interact reach (the cone). */
+export function inStrikeRange(state: GameState, entityId: string): boolean {
+  return distanceTo(state, entityId) <= STRIKE_TILES;
+}
+
 /** The bag entry for an id, or undefined. Stacks are one entry with qty > 1. */
 export function findItem(state: GameState, itemId: string): Item | undefined {
   return state.player.bag.find((item) => item.id === itemId);
@@ -89,13 +96,16 @@ export function bagHasRoomFor(state: GameState, itemId: string): boolean {
  * Hearts for StatGlyphs: hpMax HP -> hpMax/2 containers at half-heart granularity.
  * Derived, never stored. PRD §4.1.
  */
-export function hearts(state: GameState): Array<'full' | 'half' | 'empty'> {
-  const { hp, hpMax } = state.player;
-  const containers = Math.floor(hpMax / 2);
+export function heartsFromHp(hp: number, hpMax: number): Array<'full' | 'half' | 'empty'> {
+  const containers = Math.max(0, Math.floor(hpMax / 2));
   return Array.from({ length: containers }, (_, i) => {
     const remaining = hp - i * 2;
     if (remaining >= 2) return 'full';
     if (remaining === 1) return 'half';
     return 'empty';
   });
+}
+
+export function hearts(state: GameState): Array<'full' | 'half' | 'empty'> {
+  return heartsFromHp(state.player.hp, state.player.hpMax);
 }

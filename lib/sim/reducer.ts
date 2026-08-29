@@ -312,6 +312,8 @@ export function initialState(seed: number = DEFAULT_SEED): GameState {
       facing: 'down',
       bag: [sword],
       hotbar: ['sword_short', null, null],
+      name: 'wanderer',
+      appearance: 'wanderer',
     },
     dungeon: boot.dungeon,
     entities: boot.entities,

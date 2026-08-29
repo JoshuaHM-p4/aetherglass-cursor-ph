@@ -153,6 +153,7 @@ function addFloorPickup(
 }
 
 function addSlime(state: GameState, roomId: string, rng: Rng, used: Set<string>): void {
+  if (state.dungeon.rooms[roomId]?.kind === 'fountain') return;
   const pos = randomInterior(rng, used);
   if (!pos) return;
   const n = Object.values(state.entities).filter((e) => e.tags.includes('slime') && e.roomId === roomId).length;
@@ -172,6 +173,7 @@ function addSlime(state: GameState, roomId: string, rng: Rng, used: Set<string>)
 }
 
 function addGhost(state: GameState, roomId: string, rng: Rng, used: Set<string>): void {
+  if (state.dungeon.rooms[roomId]?.kind === 'fountain') return;
   const pos = randomInterior(rng, used) ?? { tx: 6, ty: 6 };
   used.add(`${pos.tx},${pos.ty}`);
   state.entities[GHOST_ID] = {

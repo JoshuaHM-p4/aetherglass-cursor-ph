@@ -1,6 +1,7 @@
 // Keyboard ownership when the glass or bag is open. Phaser reads this on the 60fps
 // path; React writes it. No EventBus key — BusEvents is frozen.
 
+import { isPlaying } from '../lib/client/play';
 import { world } from '../lib/sim/store';
 
 let bagOpen = false;
@@ -50,6 +51,7 @@ export function setRoomWiping(on: boolean): void {
 }
 
 export function isWorldInputBlocked(): boolean {
+  if (!isPlaying()) return true;
   if (roomWiping) return true;
   if (world().player.hp <= 0) return true;
   if (bagOpen || settingsOpen || paneTyping) return true;

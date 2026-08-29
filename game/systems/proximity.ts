@@ -17,10 +17,10 @@
 
 import Phaser from 'phaser';
 import type { Facing } from '../../lib/sim/types';
-import { isAdjacent } from '../../lib/sim/select';
 import { world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
 import { isWorldInputBlocked } from '../inputCapture';
+import { pickAdjacentEntity } from './interactTarget';
 
 export interface ProximitySpawnArgs {
   /** `sprite.name` is already the entity id — set at spawn, single source of ids. */
@@ -136,22 +136,7 @@ export function installProximitySystem(scene: Phaser.Scene): () => void {
     // set is a 60fps hint; Enter is a moment, so we ask the store. Solid chests
     // keep the player tangent to a 1-tile circle, which arcade does not count as
     // overlap, so `heldReach` is often empty when you are standing right there.
-    const facing = s.facing;
-    const state = world();
-    let best: { id: string; score: number } | null = null;
-    for (const entity of Object.values(state.entities)) {
-      if (entity.roomId !== state.player.roomId) continue;
-      if (!isAdjacent(state, entity.id)) continue;
-      const dx = entity.tx - state.player.tx;
-      const dy = entity.ty - state.player.ty;
-      const aligned =
-        (facing === 'right' && dx >= 0) ||
-        (facing === 'left' && dx <= 0) ||
-        (facing === 'down' && dy >= 0) ||
-        (facing === 'up' && dy <= 0);
-      const score = Math.abs(dx) + Math.abs(dy) - (aligned ? 1 : 0);
-      if (!best || score < best.score) best = { id: entity.id, score };
-    }
+    const best = pickAdjacentEntity(world(), s.facing);
     if (best) bus.emit('world:interact', { entityId: best.id });
   };
   enter.on('down', onEnter);

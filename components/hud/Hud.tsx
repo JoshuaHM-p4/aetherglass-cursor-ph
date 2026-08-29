@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { bus } from '../../game/EventBus';
+import { setPlaying } from '../../lib/client/play';
 import { cycleHotbar, getHotbarSlot, setBagOpen, setHotbarSlot, setSettingsOpen } from '../../game/inputCapture';
 import { playFileSfx, preloadFileSfx } from '../../game/systems/fileSfx';
 import { readGame, useGame } from '../useGame';
 import BagGrid from './BagGrid';
 import Hearts from './Hearts';
 import Hotbar from './Hotbar';
-import SettingsModal, { SettingsButton } from './SettingsModal';
+import InteractHint from './InteractHint';
+import SettingsModal, { HitboxButton, SettingsButton } from './SettingsModal';
+import { isHitboxDebug, toggleHitboxDebug } from '../../game/hitboxDebug';
 
 export default function Hud(): JSX.Element {
   const hp = useGame((s) => s.state.player.hp);
@@ -17,6 +20,8 @@ export default function Hud(): JSX.Element {
   const [slot, setSlot] = useState(getHotbarSlot);
   const [heldIndex, setHeld] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  const [hitboxes, setHitboxes] = useState(isHitboxDebug);
 
   const toggleBag = useCallback((open: boolean) => {
     if (open) {
@@ -40,6 +45,13 @@ export default function Hud(): JSX.Element {
     setSettingsOpen(open);
     bus.emit('hud:settings_toggled', { open });
     playFileSfx(open ? 'open' : 'close');
+  }, []);
+
+  const toggleHitboxes = useCallback(() => {
+    const on = toggleHitboxDebug();
+    setHitboxes(on);
+    playFileSfx('cursor');
+    bus.emit('hud:toast', { text: on ? 'hitboxes on' : 'hitboxes off' });
   }, []);
 
   const pickSlot = useCallback((next: number) => {
@@ -85,9 +97,15 @@ export default function Hud(): JSX.Element {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.repeat) return;
-      if (readGame().state.player.hp <= 0) return;
       const typing =
         event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+      if (event.key === 'F3') {
+        event.preventDefault();
+        if (typing) return;
+        toggleHitboxes();
+        return;
+      }
+      if (readGame().state.player.hp <= 0) return;
       if (event.key === 'Escape') {
         if (settingsOpen) {
           event.preventDefault();
@@ -141,7 +159,7 @@ export default function Hud(): JSX.Element {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [bagOpen, settingsOpen, heldIndex, toggleBag, toggleSettings, stashInSlot, pickSlot]);
+  }, [bagOpen, settingsOpen, heldIndex, toggleBag, toggleSettings, toggleHitboxes, stashInSlot, pickSlot]);
 
   useEffect(() => {
     if (hp <= 0 && bagOpen) toggleBag(false);
@@ -171,8 +189,10 @@ export default function Hud(): JSX.Element {
 
   return (
     <>
-      <div className="pointer-events-auto absolute top-5 right-5 z-30" data-hud>
+      <InteractHint />
+      <div className="pointer-events-auto absolute top-5 right-5 z-30 flex flex-col gap-1.5" data-hud>
         <SettingsButton open={settingsOpen} onClick={() => toggleSettings(!settingsOpen)} />
+        <HitboxButton on={hitboxes} onClick={toggleHitboxes} />
       </div>
       <div className="pointer-events-auto absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 flex-col items-start gap-1.5" data-hud>
         <Hearts />
@@ -216,7 +236,15 @@ export default function Hud(): JSX.Element {
           </button>
         </div>
       </div>
-      {settingsOpen && <SettingsModal onClose={() => toggleSettings(false)} />}
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => toggleSettings(false)}
+          onSaveAndExit={() => {
+            toggleSettings(false);
+            setPlaying(false);
+          }}
+        />
+      )}
       {bagOpen && (
         <div
           className="pointer-events-auto absolute inset-0 z-20 flex items-center justify-center bg-black/35"
