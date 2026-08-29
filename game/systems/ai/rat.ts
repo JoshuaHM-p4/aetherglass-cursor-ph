@@ -5,6 +5,7 @@ import { ROOM_SIZE } from '../../../lib/dungeon/const';
 import { world } from '../../../lib/sim/store';
 import { TILE } from '../../const';
 import { isKnocking } from '../knockback';
+import { playFoeVoice } from '../sound';
 import { syncFoeTile } from './syncTile';
 
 const WANDER_MS = 700;
@@ -37,6 +38,7 @@ export function installRatAi(scene: Phaser.Scene): () => void {
         const ang = Math.random() * Math.PI * 2;
         heading.set(sprite.name, { x: Math.cos(ang), y: Math.sin(ang) });
         syncFoeTile(sprite, sprite.name);
+        playFoeVoice(sprite.name, entity.tags, 480);
       }
       const dir = heading.get(sprite.name) ?? { x: 1, y: 0 };
       (sprite.body as Phaser.Physics.Arcade.Body).setVelocity(dir.x * SPEED, dir.y * SPEED);

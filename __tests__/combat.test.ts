@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { boltHits, boltRangePx, inEnemyContact, inSwingCone } from '../game/systems/hitbox';
 import { contactDamage } from '../game/systems/foeContact';
+import { foeVoiceCue, weaponUseCue } from '../game/systems/combatSfx';
 import { hurtShakeOffset } from '../game/systems/hurtFx';
 import { slashAlpha, swingAngle, swingLunge, swingProgress } from '../game/systems/swingFx';
 import { dirFromTo, facingDir, knockSpeedAt } from '../game/systems/knockback';
@@ -35,6 +36,12 @@ describe('inSwingCone', () => {
   it('respects a passed narrow or wide half-angle', () => {
     expect(inSwingCone(ox, oy, ox + 20, oy + 18, 'right', 1, 0, 0.5)).toBe(false);
     expect(inSwingCone(ox, oy, ox + 20, oy + 18, 'right', 1, 0, 1.4)).toBe(true);
+  });
+
+  it('the cyclops cone is shorter and tighter than a player hammer', () => {
+    expect(inSwingCone(ox, oy, ox + 16, oy, 'right', 1, 7, 0.55, 4)).toBe(true);
+    expect(inSwingCone(ox, oy, ox + 16, oy + 18, 'right', 1, 7, 0.55, 4)).toBe(false);
+    expect(inSwingCone(ox, oy, ox + 16, oy + 18, 'right', 1, 14, 1.4)).toBe(true);
   });
 });
 
@@ -146,5 +153,24 @@ describe('contactDamage', () => {
     expect(contactDamage({ tags: ['bat', 'ethereal'] })).toBe(1);
     expect(contactDamage({ tags: ['rat', 'passive', 'drops'] })).toBeNull();
     expect(contactDamage({ tags: ['cyclops', 'heavy'] })).toBeNull();
+  });
+});
+
+describe('combat sfx cues', () => {
+  it('picks thump, axe, and magic from tags', () => {
+    expect(weaponUseCue({ tags: ['blunt', 'heavy'] })).toBe('thump');
+    expect(weaponUseCue({ tags: ['sharp', 'heavy'] })).toBe('axe');
+    expect(weaponUseCue({ tags: ['arcane', 'bolt'] })).toBe('magic');
+    expect(weaponUseCue({ tags: ['sharp'] })).toBe('swing');
+    expect(weaponUseCue(undefined)).toBe('swing');
+  });
+
+  it('names foe voices from tags', () => {
+    expect(foeVoiceCue(['bat', 'ethereal'])).toBe('bat');
+    expect(foeVoiceCue(['spider'])).toBe('spider');
+    expect(foeVoiceCue(['slime', 'foul'])).toBe('slime');
+    expect(foeVoiceCue(['cyclops', 'heavy'])).toBe('cyclops');
+    expect(foeVoiceCue(['rat', 'passive', 'drops'])).toBe('rat');
+    expect(foeVoiceCue(['ghost'])).toBeNull();
   });
 });

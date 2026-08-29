@@ -6,6 +6,7 @@ import Phaser from 'phaser';
 import { world } from '../../../lib/sim/store';
 import { TILE } from '../../const';
 import { isKnocking } from '../knockback';
+import { playFoeVoice } from '../sound';
 import { syncFoeTile } from './syncTile';
 
 const DROP_MS = 180;
@@ -82,6 +83,7 @@ export function installSpiderAi(scene: Phaser.Scene): () => void {
         sprite.setAlpha(1);
         sprite.setPosition(nest.x, nest.y - LIFT);
         mark.setAlpha(0.4);
+        playFoeVoice(sprite.name, entity.tags);
         continue;
       }
 

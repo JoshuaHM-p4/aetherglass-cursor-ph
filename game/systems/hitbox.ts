@@ -21,8 +21,8 @@ function axis(facing: Facing): { x: number; y: number } {
   return { x: 0, y: -1 };
 }
 
-export function swingReachPx(reachTiles: number): number {
-  return TILE * Math.max(1, reachTiles) + SWING_CONE.tipPx;
+export function swingReachPx(reachTiles: number, tipPx: number = SWING_CONE.tipPx): number {
+  return TILE * Math.max(1, reachTiles) + tipPx;
 }
 
 /** How far a `bolt` travels, in pixels. No slash-tip padding. */
@@ -32,6 +32,14 @@ export function boltRangePx(reachTiles: number): number {
 
 export const BOLT = {
   radiusPx: 5,
+} as const;
+
+/** Cyclops hammer: shorter tip and a tighter cone than the player's hammer. */
+export const CYCLOPS_CONE = {
+  reachTiles: 1,
+  tipPx: 4,
+  halfAngle: 0.55,
+  targetRadiusPx: 7,
 } as const;
 
 /** True when a bolt disk overlaps an enemy disk. */
@@ -69,6 +77,7 @@ export function inSwingCone(
   reachTiles: number,
   radiusPx: number = SWING_CONE.enemyRadiusPx,
   halfAngle: number = SWING_CONE.halfAngle,
+  tipPx: number = SWING_CONE.tipPx,
 ): boolean {
   const a = axis(facing);
   const dx = px - ox;
@@ -84,7 +93,7 @@ export function inSwingCone(
   const qy = dy - perpY * scale;
   const dist = Math.hypot(qx, qy);
   if (dist < Math.max(1, SWING_CONE.innerPx - radiusPx)) return false;
-  if (dist > swingReachPx(reachTiles) + radiusPx) return false;
+  if (dist > TILE * Math.max(1, reachTiles) + tipPx + radiusPx) return false;
   const dot = (qx * a.x + qy * a.y) / Math.max(dist, 0.001);
   return dot >= Math.cos(halfAngle);
 }

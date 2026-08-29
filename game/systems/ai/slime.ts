@@ -5,6 +5,7 @@ import { ROOM_SIZE } from '../../../lib/dungeon/const';
 import { world } from '../../../lib/sim/store';
 import { TILE } from '../../const';
 import { isKnocking } from '../knockback';
+import { playFoeVoice } from '../sound';
 
 const HOP_MS = 720;
 const HOP_SPEED = 55;
@@ -32,6 +33,7 @@ export function installSlimeAi(scene: Phaser.Scene): () => void {
       const due = hopAt.get(sprite.name) ?? 0;
       if (now < due) continue;
       hopAt.set(sprite.name, now + HOP_MS);
+      playFoeVoice(sprite.name, entity.tags, 280);
       const dx = s.player.x - sprite.x;
       const dy = s.player.y - sprite.y;
       const len = Math.hypot(dx, dy) || 1;

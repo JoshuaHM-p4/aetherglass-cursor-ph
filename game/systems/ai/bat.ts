@@ -4,10 +4,12 @@
 import Phaser from 'phaser';
 import { world } from '../../../lib/sim/store';
 import { isKnocking } from '../knockback';
+import { playFoeVoice } from '../sound';
 import { syncFoeTile } from './syncTile';
 
 const DRIFT = 28;
 const SYNC_MS = 480;
+const SCREECH_MS = 1500;
 
 type Host = Phaser.Scene & {
   player: Phaser.Physics.Arcade.Sprite;
@@ -17,6 +19,7 @@ type Host = Phaser.Scene & {
 export function installBatAi(scene: Phaser.Scene): () => void {
   const s = scene as Host;
   const nextSync = new Map<string, number>();
+  const nextScreech = new Map<string, number>();
 
   const onUpdate = () => {
     const roomId = world().player.roomId;
@@ -37,6 +40,12 @@ export function installBatAi(scene: Phaser.Scene): () => void {
       if (now >= due) {
         nextSync.set(sprite.name, now + SYNC_MS);
         syncFoeTile(sprite, sprite.name);
+      }
+      const screechDue = nextScreech.get(sprite.name) ?? 0;
+      if (now >= screechDue) {
+        const stagger = (sprite.name.charCodeAt(sprite.name.length - 1) % 5) * 90;
+        nextScreech.set(sprite.name, now + SCREECH_MS + stagger);
+        playFoeVoice(sprite.name, entity.tags, 400);
       }
     }
   };

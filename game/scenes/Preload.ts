@@ -256,7 +256,7 @@ export class Preload extends Phaser.Scene {
     this.load.image('tex-crab', tile(110));
     this.load.image('tex-spider', tile(122));
     this.load.image('tex-bat', tile(120));
-    this.load.image('tex-cyclops', tile(111));
+    this.load.image('tex-cyclops', tile(109));
     this.load.image('tex-rat', tile(123));
     this.load.image('tex-fountain', tile(56));
     this.load.image('tex-heart', '/assets/items/heart_container.png');

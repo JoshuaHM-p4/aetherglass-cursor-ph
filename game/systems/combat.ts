@@ -31,7 +31,7 @@ import {
   isKnocking,
   tickKnockback,
 } from './knockback';
-import { playSfx } from './sound';
+import { playWeaponUse } from './sound';
 import {
   slashAlpha,
   slashPlace,
@@ -302,7 +302,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     const cooldown = stats?.cooldownMs ?? (item ? COMBAT.cooldownMs : UNARMED.cooldownMs);
     swingDur = stats?.swingMs ?? (item ? COMBAT.swingMs : UNARMED.swingMs);
     cooldownUntil = now + cooldown * (now < hasteUntil ? COMBAT.hasteCooldown : 1);
-    playSfx('swing');
+    playWeaponUse(item);
     const facing = s.facing;
     swingAt = now;
     swingFacing = facing;
@@ -334,7 +334,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     const cooldown = stats?.cooldownMs ?? COMBAT.cooldownMs;
     swingDur = stats?.swingMs ?? 140;
     cooldownUntil = now + cooldown * (now < hasteUntil ? COMBAT.hasteCooldown : 1);
-    playSfx('swing');
+    playWeaponUse(item);
     const facing = s.facing;
     swingAt = now;
     swingFacing = facing;
@@ -432,7 +432,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
     parryDone = false;
     parryItemId = itemId;
     parryBash = item.stats?.damage ?? 0;
-    playSfx('swing');
+    playWeaponUse(item);
   };
 
   const onSpace = () => {
