@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boltHits, boltRangePx, inEnemyContact, inSwingCone } from '../game/systems/hitbox';
+import { boltHits, boltRangePx, foeContactReach, inEnemyContact, inSwingCone } from '../game/systems/hitbox';
 import { contactDamage } from '../game/systems/foeContact';
 import { foeVoiceCue, weaponUseCue } from '../game/systems/combatSfx';
 import { hurtShakeOffset } from '../game/systems/hurtFx';
@@ -58,6 +58,12 @@ describe('inEnemyContact', () => {
     expect(inEnemyContact(px, py, px + 8, py)).toBe(false);
     expect(inEnemyContact(px, py, px + 12, py)).toBe(false);
     expect(inEnemyContact(px, py, px + 16, py)).toBe(false);
+  });
+
+  it('uses a wider reach for the dungeon crab', () => {
+    expect(foeContactReach(['crab', 'elite', 'boss'])).toBe(28);
+    expect(inEnemyContact(px, py, px + 20, py, 28)).toBe(true);
+    expect(inEnemyContact(px, py, px + 20, py)).toBe(false);
   });
 });
 
@@ -171,6 +177,7 @@ describe('combat sfx cues', () => {
     expect(foeVoiceCue(['slime', 'foul'])).toBe('slime');
     expect(foeVoiceCue(['cyclops', 'heavy'])).toBe('cyclops');
     expect(foeVoiceCue(['rat', 'passive', 'drops'])).toBe('rat');
+    expect(foeVoiceCue(['crab', 'elite', 'boss'])).toBe('crab');
     expect(foeVoiceCue(['ghost'])).toBeNull();
   });
 });

@@ -209,6 +209,21 @@ describe('dungeon generation', () => {
     expect(result.state.player.hp).toBe(8);
   });
 
+  it('GRANT of a heart_container refills hp after raising max', () => {
+    const state = initialState(1);
+    state.entities.chest_plain.contents = ['heart_container'];
+    const hurt = applyAction(state, { type: 'DAMAGE', amount: 4, source: 'test' });
+    expect(hurt.state.player.hp).toBe(2);
+    const result = applyAction(hurt.state, {
+      type: 'GRANT_ITEM',
+      itemId: 'heart_container',
+      fromEntityId: 'chest_plain',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.state.player.hpMax).toBe(8);
+    expect(result.state.player.hp).toBe(8);
+  });
+
   it('GRANT of a heart_container does not occupy a bag slot', () => {
     const state = initialState(1);
     state.entities.chest_plain.contents = ['heart_container'];
@@ -309,6 +324,9 @@ describe('dungeon generation', () => {
       expect(foeTags.has(tag), tag).toBe(true);
     }
     expect(foes.filter((e) => e.tags.includes('bat'))).toHaveLength(3);
+    const cyclops = foes.find((e) => e.tags.includes('cyclops'));
+    expect(cyclops?.tags).toContain('drops');
+    expect(cyclops?.contents).toContain('potion_red');
 
     const objects = Object.values(state.entities);
     expect(objects.some((e) => e.kind === 'shrine')).toBe(true);

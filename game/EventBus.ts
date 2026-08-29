@@ -75,6 +75,8 @@ export interface BusEvents {
   'world:proximity_exit': { entityId: string };
   /** Player stepped onto an open mid-wall opening. */
   'world:enter_passage': { dir: Facing };
+  /** Crab drop-in cutscene. HUD reveals the boss bar on `revealed`. */
+  'world:boss_intro': { playing: boolean; revealed: boolean };
 
   // ------------------------------------------------------------------ pane -> world
   // Producer: React/the Pane. Consumer: Phaser.

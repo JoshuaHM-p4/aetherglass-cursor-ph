@@ -33,7 +33,8 @@ type Cue =
   | 'slime'
   | 'cyclops'
   | 'cyclops_warn'
-  | 'rat';
+  | 'rat'
+  | 'crab_clack';
 
 const VOL: Record<Cue, number> = {
   step_a: 0.22,
@@ -58,6 +59,7 @@ const VOL: Record<Cue, number> = {
   cyclops: 0.42,
   cyclops_warn: 0.34,
   rat: 0.26,
+  crab_clack: 0.5,
 };
 
 type Bank = Record<Cue, AudioBuffer>;
@@ -218,6 +220,36 @@ function buildBank(a: AudioContext): Bank {
       const gate = t < 0.055 || t > 0.075 ? 1 : 0.15;
       return Math.sin(2 * Math.PI * Math.max(700, chirp) * t) * e * 0.55 * gate;
     }),
+    crab_clack: bake(a, 1.15, (t, dur) => {
+      const click = (at: number, f: number, w: number) => {
+        const u = t - at;
+        if (u < 0 || u > 0.07) return 0;
+        const e = Math.exp(-u * 70);
+        return (Math.sin(2 * Math.PI * f * u) * 0.55 + noise() * 0.45) * e * w;
+      };
+      const screamT = t - 0.42;
+      const scream =
+        screamT < 0
+          ? 0
+          : (() => {
+              const e = env(screamT, 0.04, 0.38, dur - 0.42);
+              const f = 220 - screamT * 90;
+              const rasp = noise() * 0.28 * Math.exp(-screamT * 3);
+              return (
+                Math.sin(2 * Math.PI * Math.max(70, f) * t) * 0.55 +
+                Math.sin(2 * Math.PI * Math.max(110, f * 1.6) * t) * 0.22 +
+                rasp
+              ) * e;
+            })();
+      return (
+        click(0.0, 2100, 1) +
+        click(0.09, 1750, 0.9) +
+        click(0.18, 2300, 1) +
+        click(0.28, 1500, 0.85) +
+        click(0.36, 1900, 0.7) +
+        scream
+      );
+    }),
     hurt: bake(a, 0.22, (t, dur) => {
       const e = env(t, 0.004, 0.16, dur);
       const f = 320 - t * 900;
@@ -319,11 +351,16 @@ export function playFoeVoice(entityId: string, tags: readonly string[], gapMs = 
   else if (cue === 'spider') play('spider', jitter(0.94, 0.1));
   else if (cue === 'slime') play('slime', jitter(0.9, 0.16));
   else if (cue === 'rat') play('rat', jitter(0.94, 0.14));
+  else if (cue === 'crab') play('crab_clack', jitter(0.94, 0.08));
   else play('cyclops', jitter(0.86, 0.12));
 }
 
 export function playCyclopsWarn(): void {
   play('cyclops_warn', jitter(0.94, 0.08));
+}
+
+export function playCrabRoar(): void {
+  play('crab_clack', jitter(0.94, 0.08));
 }
 
 export function installSoundSystem(scene: Phaser.Scene): () => void {

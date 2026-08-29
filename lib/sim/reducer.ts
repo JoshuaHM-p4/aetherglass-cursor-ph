@@ -76,7 +76,7 @@ function appendLog(state: GameState, events: readonly SimEvent[]): void {
 
 function gainHeart(state: GameState): SimEvent {
   state.player.hpMax += 2;
-  state.player.hp += 2;
+  state.player.hp = state.player.hpMax;
   return { type: 'heart_gained', hpMax: state.player.hpMax };
 }
 

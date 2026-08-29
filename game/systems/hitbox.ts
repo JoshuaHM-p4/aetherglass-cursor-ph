@@ -14,6 +14,12 @@ export const SWING_CONE = {
   enemyRadiusPx: 14,
 } as const;
 
+/** Visual scale of the dungeon crab (16px tile × this ≈ four tiles). */
+export const CRAB_SCALE = 4;
+/** Unscaled arcade box; × CRAB_SCALE ≈ 2.5 tiles so the room stays walkable. */
+export const CRAB_BODY = 10;
+export const CRAB_RADIUS_PX = 28;
+
 function axis(facing: Facing): { x: number; y: number } {
   if (facing === 'right') return { x: 1, y: 0 };
   if (facing === 'left') return { x: -1, y: 0 };
@@ -59,9 +65,24 @@ export function boltHits(
  * +1px so arcade separation (centres parked at body-size) still counts.
  * Sword reach is `inSwingCone` — do not widen this.
  */
-export function inEnemyContact(px: number, py: number, ex: number, ey: number): boolean {
-  const reach = ACTOR_BODY + 1;
+export function inEnemyContact(
+  px: number,
+  py: number,
+  ex: number,
+  ey: number,
+  reach: number = ACTOR_BODY + 1,
+): boolean {
   return Math.abs(px - ex) <= reach && Math.abs(py - ey) <= reach;
+}
+
+export function foeRadiusPx(tags: readonly string[]): number {
+  if (tags.includes('crab') || tags.includes('boss')) return CRAB_RADIUS_PX;
+  return SWING_CONE.enemyRadiusPx;
+}
+
+export function foeContactReach(tags: readonly string[]): number {
+  if (tags.includes('crab') || tags.includes('boss')) return CRAB_RADIUS_PX;
+  return ACTOR_BODY + 1;
 }
 
 /**

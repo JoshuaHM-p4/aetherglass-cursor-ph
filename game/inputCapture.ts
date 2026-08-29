@@ -11,6 +11,8 @@ let hotbarSlot = 0;
 let paneTyping = false;
 /** True during the scripted wake. Movement, bag, settings, and Escape cannot cut it short. */
 let introLocked = false;
+/** True while the crab is dropping in. Movement and swings wait. */
+let bossIntroLocked = false;
 
 export function setBagOpen(open: boolean): void {
   bagOpen = open;
@@ -29,7 +31,15 @@ export function setIntroLocked(on: boolean): void {
 }
 
 export function isIntroLocked(): boolean {
-  return introLocked;
+  return introLocked || bossIntroLocked;
+}
+
+export function setBossIntroLocked(on: boolean): void {
+  bossIntroLocked = on;
+}
+
+export function isBossIntroLocked(): boolean {
+  return bossIntroLocked;
 }
 
 export function isBagOpen(): boolean {
@@ -64,7 +74,7 @@ export function isWorldInputBlocked(): boolean {
   if (!isPlaying()) return true;
   if (roomWiping) return true;
   if (world().player.hp <= 0) return true;
-  if (introLocked || bagOpen || settingsOpen || paneTyping) return true;
+  if (introLocked || bossIntroLocked || bagOpen || settingsOpen || paneTyping) return true;
   if (typeof document === 'undefined') return false;
   const el = document.activeElement;
   if (!(el instanceof HTMLElement)) return false;

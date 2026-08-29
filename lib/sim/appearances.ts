@@ -9,7 +9,7 @@ export const APPEARANCES = [
   { id: 'violet', tile: 87, label: 'violet' },
   { id: 'squire', tile: 88, label: 'squire' },
   { id: 'mage', tile: 84, label: 'mage' },
-  { id: 'hood', tile: 82, label: 'hood' },
+  { id: 'hood', tile: 98, label: 'hood' },
 ] as const;
 
 export type AppearanceId = (typeof APPEARANCES)[number]['id'];

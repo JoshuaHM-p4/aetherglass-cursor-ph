@@ -20,6 +20,7 @@ import { gameStore, world } from '../../lib/sim/store';
 import { bus } from '../EventBus';
 import { ACTOR_BODY, PROP_BODY, TILE, WALL_BODY } from '../const';
 import { isWorldInputBlocked, setRoomWiping } from '../inputCapture';
+import { CRAB_BODY, CRAB_SCALE } from '../systems/hitbox';
 import { isPlaying } from '../../lib/client/play';
 import { requestSessionDismiss } from '../../lib/client/paneSessions';
 import { setPlayerAnchor, worldToOverlay } from '../playerAnchor';
@@ -489,6 +490,11 @@ export class Overworld extends Phaser.Scene implements OverworldRefs {
       body.allowGravity = false;
       const foe = entity.kind === 'enemy' || entity.kind === 'elite';
       insetBody(sprite, foe ? ACTOR_BODY : PROP_BODY);
+      if (entity.tags.includes('crab')) {
+        sprite.setScale(CRAB_SCALE).setAlpha(0).setDepth(12);
+        insetBody(sprite, CRAB_BODY);
+        body.enable = false;
+      }
       if (entity.kind === 'door') sizeDoorBody(sprite, entity.id);
       if (entity.tags.includes('pickup')) {
         body.checkCollision.none = true;

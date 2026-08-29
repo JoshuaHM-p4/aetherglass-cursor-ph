@@ -19,7 +19,7 @@ import { bus } from '../EventBus';
 import { getHotbarSlot, isWorldInputBlocked } from '../inputCapture';
 import { ROOM_SIZE } from '../../lib/dungeon/const';
 import { TILE } from '../const';
-import { boltHits, boltRangePx, inEnemyContact, inSwingCone, SWING_CONE } from './hitbox';
+import { BOLT, boltHits, boltRangePx, foeContactReach, foeRadiusPx, inEnemyContact, inSwingCone, SWING_CONE } from './hitbox';
 import { contactDamage } from './foeContact';
 import { hurtShakeOffset } from './hurtFx';
 import {
@@ -321,7 +321,16 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
       if (!entity || (entity.kind !== 'enemy' && entity.kind !== 'elite')) continue;
       if (entity.state === 'dead') continue;
       if (sprite.body && sprite.body.enable === false) continue;
-      if (inSwingCone(s.player.x, s.player.y, sprite.x, sprite.y, facing, reach, SWING_CONE.enemyRadiusPx, cone)) {
+      if (inSwingCone(
+        s.player.x,
+        s.player.y,
+        sprite.x,
+        sprite.y,
+        facing,
+        reach,
+        foeRadiusPx(entity.tags),
+        cone,
+      )) {
         const along = facingDir(facing);
         beginKnockback(sprite, along.x, along.y, KNOCK.enemySpeed * knock, now);
         bus.emit('world:attack_landed', { entityId: id, facing, withItemId: itemId });
@@ -391,7 +400,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
         if (!entity || (entity.kind !== 'enemy' && entity.kind !== 'elite')) continue;
         if (entity.state === 'dead') continue;
         if (foe.body && foe.body.enable === false) continue;
-        if (!boltHits(x, y, foe.x, foe.y)) continue;
+        if (!boltHits(x, y, foe.x, foe.y, BOLT.radiusPx, foeRadiusPx(entity.tags))) continue;
         const along = facingDir(bolt.facing);
         beginKnockback(foe, along.x, along.y, KNOCK.enemySpeed * bolt.knock, now);
         bus.emit('world:attack_landed', { entityId: foe.name, facing: bolt.facing, withItemId: bolt.itemId });
@@ -483,7 +492,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
         if (!entity || (entity.kind !== 'enemy' && entity.kind !== 'elite')) continue;
         if (entity.state === 'dead') continue;
         if (sprite.body && sprite.body.enable === false) continue;
-        if (!inEnemyContact(s.player.x, s.player.y, sprite.x, sprite.y)) continue;
+        if (!inEnemyContact(s.player.x, s.player.y, sprite.x, sprite.y, foeContactReach(entity.tags))) continue;
         const away = dirFromTo(s.player.x, s.player.y, sprite.x, sprite.y, facingDir(s.facing));
         beginKnockback(sprite, away.x, away.y, KNOCK.enemySpeed * 1.2, now);
         if (parryBash > 0) {
@@ -503,7 +512,7 @@ export function installCombatSystem(scene: Phaser.Scene): () => void {
         if (sprite.body && sprite.body.enable === false) continue;
         const amount = contactDamage(entity);
         if (amount === null) continue;
-        if (inEnemyContact(s.player.x, s.player.y, sprite.x, sprite.y)) {
+        if (inEnemyContact(s.player.x, s.player.y, sprite.x, sprite.y, foeContactReach(entity.tags))) {
           playHurt(sprite.x, sprite.y);
           bus.emit('world:player_hurt', { amount, source: entity.name });
           break;

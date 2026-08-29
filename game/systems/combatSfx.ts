@@ -2,7 +2,7 @@
 
 export type WeaponUseCue = 'swing' | 'thump' | 'axe' | 'magic';
 export type WeaponHitCue = 'hit' | 'thump_hit' | 'magic_hit';
-export type FoeVoiceCue = 'bat' | 'spider' | 'slime' | 'cyclops' | 'rat';
+export type FoeVoiceCue = 'bat' | 'spider' | 'slime' | 'cyclops' | 'rat' | 'crab';
 
 export function weaponUseCue(item: { tags: readonly string[] } | undefined): WeaponUseCue {
   if (!item) return 'swing';
@@ -20,6 +20,7 @@ export function weaponHitCue(item: { tags: readonly string[] } | undefined): Wea
 }
 
 export function foeVoiceCue(tags: readonly string[]): FoeVoiceCue | null {
+  if (tags.includes('crab') || tags.includes('boss')) return 'crab';
   if (tags.includes('cyclops')) return 'cyclops';
   if (tags.includes('bat')) return 'bat';
   if (tags.includes('spider')) return 'spider';

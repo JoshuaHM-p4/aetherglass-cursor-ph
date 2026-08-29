@@ -52,8 +52,13 @@ export function HeartMark({
     <svg width={size} height={h} viewBox="0 0 18 16" className="drop-shadow-[0_1px_0_#1a1014]">
       {fill === 'half' ? (
         <>
-          <path d="M9 14 L2.2 8.2 A4.2 4.2 0 0 1 9 3.4 Z" fill="#3a3140" />
-          <path d="M9 14 L15.8 8.2 A4.2 4.2 0 0 0 9 3.4 Z" fill={color} />
+          <path
+            d="M9 14.2 L2.1 8.1 A4.3 4.3 0 0 1 9 3.2 A4.3 4.3 0 0 1 15.9 8.1 Z"
+            fill="#3a3140"
+            stroke="#1a1014"
+            strokeWidth="1"
+          />
+          <path d="M9 14 L2.2 8.2 A4.2 4.2 0 0 1 9 3.4 Z" fill={color} />
         </>
       ) : (
         <path

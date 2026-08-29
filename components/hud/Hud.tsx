@@ -8,6 +8,7 @@ import { playFileSfx, preloadFileSfx } from '../../game/systems/fileSfx';
 import { BAG_SLOTS } from '../../lib/sim/select';
 import { readGame, useGame } from '../useGame';
 import BagGrid from './BagGrid';
+import BossBar from './BossBar';
 import Hearts from './Hearts';
 import Hotbar from './Hotbar';
 import InteractHint from './InteractHint';
@@ -236,6 +237,7 @@ export default function Hud(): JSX.Element {
       <InteractHint />
       <PickupFloat />
       <Minimap />
+      <BossBar />
       <div className="pointer-events-auto absolute top-5 right-5 z-30 flex flex-col gap-1.5" data-hud>
         <SettingsButton
           open={settingsOpen}

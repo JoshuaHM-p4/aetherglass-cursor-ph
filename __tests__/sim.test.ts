@@ -339,4 +339,30 @@ describe('enemy drops', () => {
     expect(result.events).toContainEqual({ type: 'item_gained', itemId: 'ore_iron' });
     expect(result.state.player.bag.some((item) => item.id === 'ore_iron')).toBe(true);
   });
+
+  it('killing a cyclops grants its potion', () => {
+    const state = initialState();
+    state.entities.cyclops_test = {
+      id: 'cyclops_test',
+      kind: 'enemy',
+      name: 'door cyclops',
+      tags: ['cyclops', 'heavy', 'drops'],
+      state: 'idle',
+      tx: state.player.tx + 1,
+      ty: state.player.ty,
+      roomId: state.player.roomId,
+      hp: 1,
+      hpMax: 1,
+      contents: ['potion_red'],
+    };
+    const result = applyAction(state, {
+      type: 'STRIKE_ENTITY',
+      entityId: 'cyclops_test',
+      amount: 1,
+      withItemId: null,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.events).toContainEqual({ type: 'item_gained', itemId: 'potion_red' });
+    expect(result.state.player.bag.some((item) => item.id === 'potion_red')).toBe(true);
+  });
 });

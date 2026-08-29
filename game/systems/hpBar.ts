@@ -53,6 +53,7 @@ export function installHpBars(scene: Phaser.Scene): () => void {
       const entity = world().entities[sprite.name];
       if (!entity) continue;
       if (entity.kind !== 'enemy' && entity.kind !== 'elite') continue;
+      if (entity.tags.includes('boss') || entity.tags.includes('crab')) continue;
       const hp = entity.hp ?? 0;
       const hpMax = entity.hpMax ?? 0;
       const show = entity.state !== 'dead' && hpMax > 0 && hp > 0 && hp < hpMax;
