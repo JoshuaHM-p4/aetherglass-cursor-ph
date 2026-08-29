@@ -150,6 +150,20 @@ describe('dungeon generation', () => {
     }
   });
 
+  it('never dead-ends the first cave as fountain plus one room', () => {
+    for (let seed = 1; seed <= 80; seed++) {
+      const state = enter(initialState(seed), 'up').state;
+      const room = state.dungeon.rooms[state.player.roomId];
+      expect(room, `seed ${seed}`).toBeTruthy();
+      const extras = ALL_FACINGS.filter((dir) => dir !== 'down' && room!.exits[dir]);
+      expect(extras.length, `seed ${seed}`).toBeGreaterThan(0);
+      expect(
+        extras.some((dir) => room!.exits[dir]?.lock === 'open'),
+        `seed ${seed} needs an unlocked continuation`,
+      ).toBe(true);
+    }
+  });
+
   it('keeps a reachable key for every keyed lock across many seeds', () => {
     for (let seed = 1; seed <= 24; seed++) {
       const state = explore(seed, 28);
@@ -158,19 +172,18 @@ describe('dungeon generation', () => {
     }
   });
 
-  it('forces a master door by the cave cap', () => {
-    let found = false;
-    for (let seed = 1; seed <= 40; seed++) {
+  it('forces a connected master door by the cave cap', () => {
+    for (let seed = 1; seed <= 24; seed++) {
       const state = explore(seed, 40);
-      if (state.dungeon.masterDoorRoomId) {
-        found = true;
-        const room = state.dungeon.rooms[state.dungeon.masterDoorRoomId];
-        const master = ALL_FACINGS.some((d) => room?.exits[d]?.lock === 'master');
-        expect(master).toBe(true);
-        break;
-      }
+      expect(state.dungeon.caveCount, `seed ${seed}`).toBeGreaterThan(1);
+      expect(state.dungeon.masterDoorRoomId, `seed ${seed}`).toBeTruthy();
+      const room = state.dungeon.rooms[state.dungeon.masterDoorRoomId!];
+      expect(room, `seed ${seed}`).toBeTruthy();
+      expect(room?.kind).toBe('cave');
+      const master = ALL_FACINGS.filter((d) => room?.exits[d]?.lock === 'master');
+      expect(master.length, `seed ${seed}`).toBe(1);
+      expect(state.dungeon.rooms[state.player.roomId]?.kind).not.toBe('fountain');
     }
-    expect(found).toBe(true);
   });
 
   it('GAIN_HEART raises hpMax and hp by one container', () => {

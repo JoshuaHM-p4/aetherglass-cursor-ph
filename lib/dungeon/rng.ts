@@ -28,3 +28,15 @@ export function nextInt(rng: Rng, lo: number, hi: number): number {
 export function pick<T>(rng: Rng, items: readonly T[]): T {
   return items[Math.floor(nextFloat(rng) * items.length)]!;
 }
+
+/** Fisher–Yates. Returns a new array; does not mutate `items`. */
+export function shuffle<T>(rng: Rng, items: readonly T[]): T[] {
+  const next = [...items];
+  for (let i = next.length - 1; i > 0; i--) {
+    const j = nextInt(rng, 0, i);
+    const a = next[i]!;
+    next[i] = next[j]!;
+    next[j] = a;
+  }
+  return next;
+}

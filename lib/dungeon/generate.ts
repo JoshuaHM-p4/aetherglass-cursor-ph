@@ -22,7 +22,7 @@ import {
   doorId,
   roomIdAt,
 } from './const';
-import { chance, nextInt, pick, seedRng, type Rng } from './rng';
+import { chance, nextInt, pick, seedRng, shuffle, type Rng } from './rng';
 import type {
   DungeonState,
   Entity,
@@ -367,33 +367,76 @@ function closeDanglingOpens(state: GameState): void {
   }
 }
 
+function neighborId(room: Room, dir: Facing): string {
+  const d = GRID_DELTA[dir];
+  return roomIdAt(room.gx + d.gx, room.gy + d.gy);
+}
+
+function isUncarved(state: GameState, room: Room, dir: Facing): boolean {
+  return !state.dungeon.rooms[neighborId(room, dir)];
+}
+
+function shouldPlaceMaster(state: GameState, rng: Rng): boolean {
+  if (state.dungeon.masterDoorRoomId) return false;
+  const { caveCount, cap } = state.dungeon;
+  if (caveCount >= cap - 2) return true;
+  if (caveCount < 3) return false;
+  return chance(rng, 0.08 + (caveCount / cap) * 0.3);
+}
+
+function placeMasterDoor(
+  state: GameState,
+  room: Room,
+  arrivedFrom: Facing,
+  growthDir: Facing | null,
+  rng: Rng,
+): void {
+  if (state.dungeon.masterDoorRoomId) return;
+  const sides = ALL_FACINGS.filter((d) => d !== arrivedFrom && d !== growthDir);
+  const hole = sides.find((d) => room.exits[d] === null);
+  if (hole) {
+    lockExit(state, room, hole, 'master', room.id, rng);
+    return;
+  }
+  const openSide = sides.find((d) => room.exits[d]?.lock === 'open');
+  if (openSide) {
+    lockExit(state, room, openSide, 'master', room.id, rng);
+    return;
+  }
+  if (sides[0]) lockExit(state, room, sides[0], 'master', room.id, rng);
+}
+
 function rollExtraExits(
   state: GameState,
   room: Room,
   arrivedFrom: Facing,
   rng: Rng,
 ): void {
-  const remaining = ALL_FACINGS.filter((d) => d !== arrivedFrom);
+  const remaining = shuffle(
+    rng,
+    ALL_FACINGS.filter((d) => d !== arrivedFrom),
+  );
   const atCap = state.dungeon.caveCount >= state.dungeon.cap;
   if (atCap) {
-    if (!state.dungeon.masterDoorRoomId) {
-      lockExit(state, room, remaining[0]!, 'master', room.id, rng);
-    }
+    placeMasterDoor(state, room, arrivedFrom, null, rng);
     return;
   }
 
-  let rolledMaster = false;
+  // Always keep one open hole into uncarved grid so the fountain cannot
+  // dead-end as "hub plus a single cave". Prefer a wall that is not already a room.
+  const uncarved = remaining.filter((d) => isUncarved(state, room, d));
+  const growthDir = (uncarved[0] ?? remaining[0])!;
+  lockExit(state, room, growthDir, 'open', room.id, rng);
 
   for (const dir of remaining) {
+    if (dir === growthDir) continue;
     if (!chance(rng, 0.5)) continue;
-    let lock: PassageLock = 'open';
-    if (!state.dungeon.masterDoorRoomId && !rolledMaster && chance(rng, 0.05)) {
-      lock = 'master';
-      rolledMaster = true;
-    } else if (chance(rng, 0.28)) {
-      lock = 'key';
-    }
+    const lock: PassageLock = chance(rng, 0.28) ? 'key' : 'open';
     lockExit(state, room, dir, lock, room.id, rng);
+  }
+
+  if (shouldPlaceMaster(state, rng)) {
+    placeMasterDoor(state, room, arrivedFrom, growthDir, rng);
   }
 }
 
